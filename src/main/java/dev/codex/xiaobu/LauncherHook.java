@@ -1,7 +1,9 @@
 package dev.codex.xiaobu;
 
+import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -148,8 +150,11 @@ public final class LauncherHook implements IXposedHookLoadPackage {
                             if (index < 0 || index >= cards.size()
                                     || !SAVE_LABEL.equals(call(cards.get(index), "getName"))) return;
                             Context context = ((android.view.View) hook.thisObject).getContext();
-                            saveCapture(context, hook.thisObject);
+                            Context app = context.getApplicationContext();
                             hook.setResult(null);
+                            Bitmap picture = lastCapture;
+                            closeRecognition(context, hook.thisObject);
+                            saveCapture(app, picture);
                         }
                     });
             XposedBridge.log("XiaobuLauncherHook: save screenshot button hooks installed");
@@ -187,13 +192,37 @@ public final class LauncherHook implements IXposedHookLoadPackage {
         return m.invoke(obj);
     }
 
-    private static void saveCapture(Context context, Object alert) {
-        final Bitmap picture = lastCapture;
+    private static void closeRecognition(Context context, Object alert) {
+        Context current = context;
+        while (current instanceof ContextWrapper && !(current instanceof Activity)) {
+            Context next = ((ContextWrapper) current).getBaseContext();
+            if (next == current) break;
+            current = next;
+        }
+        if (current instanceof Activity) {
+            try {
+                Activity activity = (Activity) current;
+                // Use Xiaobu's normal Back handler. It fades the recognition
+                // surface out, then finishes the activity after the animation.
+                activity.onBackPressed();
+                XposedBridge.log("XiaobuLauncherHook: native back animation started on tap");
+                return;
+            } catch (Throwable error) {
+                XposedBridge.log("XiaobuLauncherHook: native back failed: " + error);
+            }
+        }
+        try {
+            call(alert, "I");
+        } catch (Throwable error) {
+            XposedBridge.log("XiaobuLauncherHook: dismiss fallback failed: " + error);
+        }
+    }
+
+    private static void saveCapture(Context app, final Bitmap picture) {
         if (picture == null || picture.isRecycled()) {
-            Toast.makeText(context, "未找到识屏截图，请重新启动识屏后再试", Toast.LENGTH_LONG).show();
+            toast(app, "未找到识屏截图，请重新启动识屏后再试");
             return;
         }
-        final Context app = context.getApplicationContext();
         new Thread(() -> {
             Uri uri = null;
             try {
@@ -218,15 +247,7 @@ public final class LauncherHook implements IXposedHookLoadPackage {
                     app.getContentResolver().update(uri, ready, null, null);
                 }
                 XposedBridge.log("XiaobuLauncherHook: screenshot saved to " + uri);
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    Toast.makeText(app, "截图已保存到相册", Toast.LENGTH_SHORT).show();
-                    try {
-                        call(alert, "I");
-                        XposedBridge.log("XiaobuLauncherHook: recognition screen closed after save");
-                    } catch (Throwable error) {
-                        XposedBridge.log("XiaobuLauncherHook: close after save failed: " + error);
-                    }
-                });
+                toast(app, "已保存截图");
             } catch (Throwable error) {
                 if (uri != null) app.getContentResolver().delete(uri, null, null);
                 XposedBridge.log("XiaobuLauncherHook: screenshot save failed: " + error);
