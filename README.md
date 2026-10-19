@@ -1,13 +1,13 @@
 # 小布识屏增强
 
-一个用于 ColorOS 小布识屏的 LSPosed 模块，让原有方式在更多应用页面启动识屏。
+小布识屏增强是一个适用于 ColorOS 的 LSPosed 模块，让小布识屏可以在桌面和更多应用页面启动，并在识屏界面加入“保存截图”按钮。点击保存后，识屏会以原生返回动画退出，截图保存到相册。
 
-新增“保存截图”按钮，位于识屏底部操作栏。点击时按小布原生返回动画淡出，截图在后台保存到相册的 `Pictures/小布识屏增强`，成功后提示“已保存截图”。
+## 安装
 
-[下载 v1.5 APK](release/XiaobuScreenEnhancer-v1.5.apk) · [查看源码](src/main)
-
-在 LSPosed 中启用模块，作用域只勾选 `com.coloros.colordirectservice`。
+下载并安装 [v1.5 APK](release/XiaobuScreenEnhancer-v1.5.apk)，在 LSPosed 中启用模块，作用域选择 `com.coloros.colordirectservice`，然后重启小布识屏进程。
 
 ## 兼容性
 
-在 OnePlus PLK110、ColorOS 17、小布识屏 17.4.14 上测试。桌面页面已验证点击后淡出并保存截图。其他系统版本尚未逐一验证。
+已在 OnePlus PLK110、ColorOS 17、小布识屏 17.4.14 上测试。其他设备和系统版本可能需要适配。
+
+[查看源码](src/main)
