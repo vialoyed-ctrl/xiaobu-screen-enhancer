@@ -1,11 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="4"
-    android:versionName="1.3">
+    android:versionCode="5"
+    android:versionName="1.4">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <application android:label="小布识屏增强" android:hasCode="true">
         <meta-data android:name="xposedmodule" android:value="true" />
-        <meta-data android:name="xposeddescription" android:value="放宽应用黑名单和安全窗口预检查；作用域仅限小布识屏" />
+        <meta-data android:name="xposeddescription" android:value="放宽应用限制，并在识屏操作栏添加保存截图；作用域仅限小布识屏" />
         <meta-data android:name="xposedminversion" android:value="82" />
     </application>
 </manifest>
