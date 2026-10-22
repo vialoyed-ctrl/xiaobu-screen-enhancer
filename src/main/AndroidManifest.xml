@@ -1,11 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="6"
-    android:versionName="1.5">
+    android:versionCode="10"
+    android:versionName="1.8">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <application android:label="小布识屏增强" android:hasCode="true">
         <meta-data android:name="xposedmodule" android:value="true" />
-        <meta-data android:name="xposeddescription" android:value="放宽应用限制，并在识屏操作栏添加保存截图；作用域仅限小布识屏" />
+        <meta-data android:name="xposeddescription" android:value="扩展小布识屏和屏幕翻译的可用页面，支持识图与保存截图" />
         <meta-data android:name="xposedminversion" android:value="82" />
+        <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
     </application>
 </manifest>
