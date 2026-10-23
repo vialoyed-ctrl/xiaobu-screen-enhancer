@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="17"
-    android:versionName="2.0.3">
+    android:versionCode="19"
+    android:versionName="2.0.5">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -22,6 +22,9 @@
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+        <activity android:name="dev.codex.xiaobu.WebSearchActivity" android:exported="true"
+            android:label="识图" android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
+            android:excludeFromRecents="true" android:configChanges="orientation|screenSize|keyboardHidden" />
         <service android:name="dev.codex.xiaobu.settings.GestureObserverService"
             android:label="小布识屏增强 · 长按检测"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

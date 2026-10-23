@@ -246,46 +246,14 @@ final class ScreenshotActions {
 
     private static void uploadAndOpen(Context app, int engine, Uri picture, long generation) {
         try {
-            WRITER.execute(() -> {
-                try (java.io.InputStream stream = app.getContentResolver().openInputStream(picture)) {
-                    String result = WebImageSearch.upload(stream, engine);
-                    MAIN.post(() -> {
-                        if (!ScreenshotButtons.CAPTURES.isGeneration(generation)) return;
-                        try { app.startActivity(webIntent(app, result)); }
-                        catch (Exception error) { toast(app, "无法打开默认浏览器"); }
-                    });
-                } catch (Exception error) {
-                    // Do not log result URLs, screenshots or response bodies.
-                    XposedBridge.log("XiaobuLauncherHook: web image upload failed: " + error.getClass().getSimpleName());
-                    toast(app, "识图上传失败，请检查网络后重试");
-                }
-            });
-        } catch (RejectedExecutionException busy) { toast(app, "正在处理截图，请稍后重试"); }
+            Intent request = imageIntent(picture).setClassName("dev.codex.xiaobu.launcherhook", "dev.codex.xiaobu.WebSearchActivity");
+            request.putExtra("engine", engine);
+            request.setAction(Intent.ACTION_VIEW);
+            app.startActivity(request);
+        } catch (Exception error) {
+            toast(app, "无法启动网页识图，请确认已安装新版模块");
+        }
     }
-
-    private static Intent webIntent(Context app, String result) {
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(result));
-        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            Object value = app.getPackageManager().getClass()
-                    .getMethod("getDefaultBrowserPackageNameAsUser", int.class)
-                    .invoke(app.getPackageManager(), android.os.Process.myUid() / 100000);
-            if (value instanceof String && !((String) value).isEmpty()) {
-                intent.setPackage((String) value);
-                return intent;
-            }
-        } catch (Exception ignored) { }
-        try {
-            Intent generic = new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.org/"));
-            generic.addCategory(Intent.CATEGORY_BROWSABLE);
-            ResolveInfo browser = app.getPackageManager().resolveActivity(generic, PackageManager.MATCH_DEFAULT_ONLY);
-            if (browser != null && browser.activityInfo != null
-                    && !"android".equals(browser.activityInfo.packageName)) intent.setPackage(browser.activityInfo.packageName);
-        } catch (Exception ignored) { }
-        return intent;
-    }
-
     private static boolean canOpen(Context context, ActivityInfo info, String requiredPackage) {
         return info != null && requiredPackage.equals(info.packageName) && info.exported && info.enabled
                 && (info.applicationInfo == null || info.applicationInfo.enabled)
@@ -348,4 +316,3 @@ final class ScreenshotActions {
         });
     }
 }
-
