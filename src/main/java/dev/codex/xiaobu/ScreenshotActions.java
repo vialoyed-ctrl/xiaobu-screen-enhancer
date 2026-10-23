@@ -69,6 +69,11 @@ final class ScreenshotActions {
 
     static void showMenu(View alert, View anchor, ScreenshotButtons.Binding binding,
             ScreenshotButtons.NativeUi ui) {
+        showMenu(alert, anchor, binding, ui, -1);
+    }
+
+    private static void showMenu(View alert, View anchor, ScreenshotButtons.Binding binding,
+            ScreenshotButtons.NativeUi ui, final int selectedEngine) {
         Context context = alert.getContext();
         if (!ScreenshotButtons.CAPTURES.hasImage(binding.generation)) {
             toast(context, "未找到识屏截图，请重新启动识屏后再试");
@@ -80,8 +85,8 @@ final class ScreenshotActions {
             if (previous != null && Boolean.TRUE.equals(ui.popupShowing.invoke(previous))) return;
             Object popup = ui.popup.newInstance(context);
             List<Object> items = new ArrayList<Object>(2);
-            items.add(ui.popupItem.newInstance("Google", engineIcon(context, 0), null));
-            items.add(ui.popupItem.newInstance("Yandex", engineIcon(context, 1), null));
+            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Google" : "应用", engineIcon(context, selectedEngine < 0 ? 0 : selectedEngine), null));
+            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Yandex" : "网页（选择已保存截图上传）", engineIcon(context, selectedEngine < 0 ? 1 : selectedEngine), null));
             ui.popupItems.invoke(popup, items);
             final Context app = context.getApplicationContext();
             final WeakReference<View> target = new WeakReference<View>(alert);
@@ -90,11 +95,20 @@ final class ScreenshotActions {
                     (proxy, method, args) -> {
                         if ("invoke".equals(method.getName())) {
                             if (args == null || args.length < 2 || !(args[1] instanceof Integer)) return ui.unit;
-                            int engine = (Integer) args[1];
-                            if (engine < 0 || engine >= PACKAGES.length || !selected.compareAndSet(false, true)) return ui.unit;
+                            int choice = (Integer) args[1];
+                            if (choice < 0 || choice >= 2 || !selected.compareAndSet(false, true)) return ui.unit;
                             View view = target.get();
                             if (view == null || binding.closed) return ui.unit;
-                            if (resolveShare(app, engine, null, null) == null) {
+                            if (selectedEngine < 0) {
+                                MAIN.postDelayed(() -> {
+                                    try { if (!binding.closed) showMenu(view, anchor, binding, ui, choice); }
+                                    catch (Throwable error) { ScreenshotButtons.log("search mode menu failed", error); }
+                                }, 120);
+                                return ui.unit;
+                            }
+                            final int engine = selectedEngine;
+                            final boolean web = choice == 1;
+                            if (!web && resolveShare(app, engine, null, null) == null) {
                                 toast(app, "未找到对应的识图应用");
                                 return ui.unit;
                             }
@@ -104,13 +118,16 @@ final class ScreenshotActions {
                                 View current = target.get();
                                 if (current == null || binding.closed
                                         || !ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
-                                Intent intent = resolveShare(app, engine, uri, null);
+                                Intent intent = web ? webIntent(app, engine) : resolveShare(app, engine, uri, null);
                                 if (intent == null) { toast(app, "未找到对应的识图应用"); return; }
                                 closeRecognition(current, ui);
                                 MAIN.postDelayed(() -> {
                                     // A newer recognition must not be interrupted by an older save.
                                     if (!ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
-                                    launch(app, engine, uri, intent);
+                                    if (web) {
+                                        try { app.startActivity(intent); }
+                                        catch (Exception error) { toast(app, "无法打开默认浏览器"); }
+                                    } else launch(app, engine, uri, intent);
                                 }, 320);
                             });
                             return ui.unit;
@@ -225,6 +242,21 @@ final class ScreenshotActions {
         return intent;
     }
 
+    private static Intent webIntent(Context app, int engine) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(engine == 0
+                ? "https://www.google.com/imghp" : "https://yandex.com/images/"));
+        intent.addCategory(Intent.CATEGORY_BROWSABLE);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            Intent generic = new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.org/"));
+            generic.addCategory(Intent.CATEGORY_BROWSABLE);
+            ResolveInfo browser = app.getPackageManager().resolveActivity(generic, PackageManager.MATCH_DEFAULT_ONLY);
+            if (browser != null && browser.activityInfo != null
+                    && !"android".equals(browser.activityInfo.packageName)) intent.setPackage(browser.activityInfo.packageName);
+        } catch (Exception ignored) { }
+        return intent;
+    }
+
     private static boolean canOpen(Context context, ActivityInfo info, String requiredPackage) {
         return info != null && requiredPackage.equals(info.packageName) && info.exported && info.enabled
                 && (info.applicationInfo == null || info.applicationInfo.enabled)
@@ -237,9 +269,10 @@ final class ScreenshotActions {
             PackageManager packages = app.getPackageManager();
             String name = PACKAGES[engine];
             Intent explicit = imageIntent(uri).setClassName(name, ENTRY_POINTS[engine]);
-            ResolveInfo direct = packages.resolveActivity(explicit, 0);
-            if (!ENTRY_POINTS[engine].equals(excludedClass) && direct != null
-                    && canOpen(app, direct.activityInfo, name)) return explicit;
+            // Host targets modern Android: package visibility may hide an installed
+            // share receiver from queries. Explicit launch is still allowed and the
+            // system checks export/permission/enabled state when starting it.
+            if (!ENTRY_POINTS[engine].equals(excludedClass)) return explicit;
             Intent withinEngine = imageIntent(uri).setPackage(name);
             List<ResolveInfo> matches = packages.queryIntentActivities(withinEngine, PackageManager.MATCH_DEFAULT_ONLY);
             for (ResolveInfo match : matches) {

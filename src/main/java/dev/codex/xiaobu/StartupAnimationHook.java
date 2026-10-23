@@ -17,6 +17,8 @@ final class StartupAnimationHook {
     private static final ThreadLocal<Boolean> enteringFragment = new ThreadLocal<Boolean>();
     private static volatile boolean entering;
     private static volatile boolean scanReady;
+    private static volatile boolean desktopEntry;
+    static boolean nativeDesktopEntry() { return desktopEntry; }
 
     private static boolean fastEntry() {
         return entering;
@@ -25,6 +27,24 @@ final class StartupAnimationHook {
     static void install(ClassLoader loader) {
         installEntryPhase(loader);
         installToolbarScopes(loader);
+        try {
+            Class<?> starter = Class.forName("com.oplus.infocollection.floating.DirectCollectStarter", false, loader);
+            Class<?> info = Class.forName("com.oplus.infocollection.data.CollectionStartInfo", false, loader);
+            final Method show = starter.getDeclaredMethod("l", Activity.class, info);
+            show.setAccessible(true);
+            XposedHelpers.findAndHookMethod(starter.getName(), loader, "k", Activity.class, info,
+                    new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
+                            if (!scanReady) return;
+                            // k waits for the decorative renderer. With that renderer
+                            // skipped, enter its native result transition directly.
+                            show.invoke(hook.thisObject, hook.args[0], hook.args[1]);
+                            hook.setResult(null);
+                        }
+                    });
+        } catch (Throwable error) {
+            XposedBridge.log("XiaobuLauncherHook: result transition hook unavailable: " + error);
+        }
         try {
             String collect = "com.oplus.infocollection.floating.CollectAnimator";
             Class<?> function = Class.forName("kotlin.jvm.functions.Function0", false, loader);
@@ -51,6 +71,7 @@ final class StartupAnimationHook {
                     "com.oplus.infocollection.data.CollectionStartInfo", function, function,
                     new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam hook) {
+                            desktopEntry = String.valueOf(hook.args[1]).contains("com.android.launcher");
                             if (scanReady) hook.args[3] = null;
                         }
                     });
@@ -59,7 +80,13 @@ final class StartupAnimationHook {
                 XposedHelpers.findAndHookMethod(collect, loader, name, function, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
                         if (!scanReady) return;
-                        if (hook.args[0] != null) invoke.invoke(hook.args[0]);
+                        final Object callback = hook.args[0];
+                        // Native effect callbacks arrive on a later frame. Keep that
+                        // ordering so capture/task registration finishes first.
+                        if (callback != null) new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                            try { invoke.invoke(callback); }
+                            catch (Throwable error) { XposedBridge.log("XiaobuLauncherHook: entry callback failed: " + error); }
+                        });
                         hook.setResult(null);
                         XposedBridge.log("XiaobuLauncherHook: startup scan effect skipped");
                     }
@@ -242,3 +269,5 @@ final class StartupAnimationHook {
         };
     }
 }
+
+

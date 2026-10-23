@@ -16,6 +16,19 @@ final class NetworkOcrHook {
             }
             XposedHelpers.findAndHookMethod(observer, loader, "c", long.class, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
+                    try {
+                        if (StartupAnimationHook.nativeDesktopEntry()) return;
+                        Class<?> manager = Class.forName("android.app.OplusActivityManager", false, loader);
+                        Object top = manager.getMethod("getTopActivityComponentName").invoke(manager.getConstructor().newInstance());
+                        if (top instanceof android.content.ComponentName
+                                && "com.android.launcher".equals(((android.content.ComponentName) top).getPackageName())) {
+                            XposedBridge.log("XiaobuLauncherHook: desktop retains native cloud/local OCR scheduling");
+                            return;
+                        }
+                    } catch (Throwable unavailable) {
+                        // Unknown foreground state retains the reliable native scheduler.
+                        return;
+                    }
                     // Native c() uses CountDownLatch.await(timeout, SECONDS).
                     // Zero means an immediate poll, so the existing local path starts next.
                     // The original cloud request, callbacks and local timeout remain intact.
@@ -33,3 +46,4 @@ final class NetworkOcrHook {
         }
     }
 }
+
