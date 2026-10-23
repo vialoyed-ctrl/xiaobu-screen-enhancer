@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Google uses a temporary public image URL; Yandex receives the image directly. */
+/** Both engines search using a temporary public image URL. */
 final class WebImageSearch {
     private static final int MAX_IMAGE = 20 * 1024 * 1024;
     private static final int MAX_RESPONSE = 1024 * 1024;
@@ -20,58 +20,10 @@ final class WebImageSearch {
         if (engine != 0 && engine != 1) throw new IllegalArgumentException("Unknown engine");
         byte[] image = read(picture, MAX_IMAGE);
         if (image.length == 0) throw new IOException("Empty screenshot");
-        if (engine == 0) return googleByImageUrl(image);
-        String endpoint = "https://yandex.com/images-apphost/image-download?cbir=1";
-        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
-        String mime = image.length > 2 && image[0] == (byte) 0xff && image[1] == (byte) 0xd8 ? "image/jpeg" : "image/png";
-        try {
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(25000);
-            connection.setInstanceFollowRedirects(false);
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36");
-            connection.setRequestProperty("Content-Type", mime);
-            connection.setDoOutput(true);
-            connection.setFixedLengthStreamingMode(image.length);
-            try (OutputStream out = connection.getOutputStream()) {
-                out.write(image);
-            }
-            int status = connection.getResponseCode();
-            if (status >= 300 && status < 400) {
-                String location = connection.getHeaderField("Location");
-                if (location != null) return checked(new URL(new URL(endpoint), location).toString(), engine);
-            }
-            if (status != 200) throw new IOException("Image upload HTTP " + status);
-            String body;
-            try (InputStream response = connection.getInputStream()) {
-                body = new String(read(response, MAX_RESPONSE), StandardCharsets.UTF_8);
-            }
-            if (engine == 1) {
-                JSONObject uploaded = new JSONObject(body);
-                String imageUrl = uploaded.optString("url", "");
-                if (!imageUrl.isEmpty()) {
-                    URL asset = new URL(imageUrl);
-                    if (!"https".equals(asset.getProtocol()) || !asset.getHost().endsWith(".yandex.net")) {
-                        throw new IOException("Unexpected Yandex image host");
-                    }
-                    return "https://yandex.com/images/search?rpt=imageview&url=" + URLEncoder.encode(imageUrl, "UTF-8");
-                }
-                JSONArray blocks = new JSONObject(body).optJSONArray("blocks");
-                if (blocks != null) for (int i = 0; i < blocks.length(); i++) {
-                    JSONObject params = blocks.getJSONObject(i).optJSONObject("params");
-                    if (params == null) continue;
-                    String id = params.optString("cbirId", "");
-                    if (!id.isEmpty()) return "https://yandex.com/images/search?rpt=imageview&cbir_id="
-                            + URLEncoder.encode(id, "UTF-8");
-                    String query = params.optString("url", "");
-                    if (!query.isEmpty()) return checked("https://yandex.com/images/search?" + query, engine);
-                }
-            }
-            throw new IOException("Engine did not return an image search result URL");
-        } finally { connection.disconnect(); }
+        return hostedImageSearch(image, engine);
     }
 
-    private static String googleByImageUrl(byte[] image) throws Exception {
+    private static String hostedImageSearch(byte[] image, int engine) throws Exception {
         String boundary = "XiaobuTemporary" + Long.toHexString(System.nanoTime());
         boolean jpeg = image.length > 2 && image[0] == (byte) 0xff && image[1] == (byte) 0xd8;
         byte[] prefix = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"expire\"\r\n\r\n3600\r\n"
@@ -101,7 +53,7 @@ final class WebImageSearch {
         if (!imageLink.find()) throw new IOException("Temporary image link unavailable");
         String direct = checkedTemporary(imageLink.group(1).replace("&amp;", "&"));
         if (!new URL(direct).getPath().startsWith("/dl/")) throw new IOException("Invalid temporary image link");
-        return "https://www.google.com/searchbyimage?image_url=" + URLEncoder.encode(direct, "UTF-8");
+        return (engine == 0 ? "https://www.google.com/searchbyimage?image_url=" : "https://yandex.com/images/search?rpt=imageview&url=") + URLEncoder.encode(direct, "UTF-8");
     }
 
     private static HttpURLConnection temporaryConnection(String link) throws Exception {

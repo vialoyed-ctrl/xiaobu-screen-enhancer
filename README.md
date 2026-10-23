@@ -2,7 +2,7 @@
 
 适用于 ColorOS 的 LSPosed 模块，扩展小布识屏和屏幕翻译的可用页面，提供识图、保存截图和快速启动，并支持可选的全屏单指长按。
 
-[下载 v2.0.5 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.0.5/XiaobuScreenEnhancer-v2.0.5.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.0.5)
+[下载 v2.0.6 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.0.6/XiaobuScreenEnhancer-v2.0.6.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.0.6)
 
 ## 功能
 
@@ -16,7 +16,7 @@
 
 ## 使用
 
-安装 `XiaobuScreenEnhancer-v2.0.5.apk`，在 LSPosed 中启用模块并勾选推荐作用域：**小布识屏、翻译、系统框架**，然后重启手机。更新系统框架中的代码后也需要重启。
+安装 `XiaobuScreenEnhancer-v2.0.6.apk`，在 LSPosed 中启用模块并勾选推荐作用域：**小布识屏、翻译、系统框架**，然后重启手机。更新系统框架中的代码后也需要重启。
 
 如需单指长按，打开模块设置，开启开关，并在系统辅助功能中开启 **“小布识屏增强 · 长按检测”**。默认跟随系统双指长按时长，再等待约 100 毫秒避让原生操作；同一次按住只触发一次，并轻震提示。
 
@@ -29,3 +29,8 @@
 v2.0 将截图捕获、会话生命周期、后台保存及界面按钮拆分，增加旧截图失效、资源租用、重复操作保护和有界任务队列；启动动画加速限定在实际入场流程。
 
 源码位于 `src/main`，构建与测试方法见 [BUILDING.md](BUILDING.md)。
+## v2.0.6 网页识图
+
+选择 Google 的网页模式时，模块自动把截图副本上传到临时图床 tmpfiles.org，再通过 Google 的 `searchbyimage?image_url=` 打开识图结果。上传设置为一小时后删除；知道临时链接的人在有效期内可以访问图片。Yandex 网页模式同样使用临时图床链接，应用模式仍将截图交给所选应用。上传后的结果使用系统默认浏览器打开。
+
+保存到相册的原图不会因临时图床到期而删除。临时图床或搜索服务不可用时会显示重试入口。

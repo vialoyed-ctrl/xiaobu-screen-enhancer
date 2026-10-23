@@ -27,7 +27,7 @@ import de.robv.android.xposed.XposedHelpers;
 
 /** Installs screenshot UI only when the complete native contract is available. */
 final class ScreenshotButtons {
-    static final String SAVE_LABEL = "保存截图";
+    static final String SAVE_LABEL = "截图";
     static final String SEARCH_LABEL = "识图";
     static final ScreenshotSession<Bitmap> CAPTURES = new ScreenshotSession<Bitmap>(bitmap -> {
         try { if (!bitmap.isRecycled()) bitmap.recycle(); }
