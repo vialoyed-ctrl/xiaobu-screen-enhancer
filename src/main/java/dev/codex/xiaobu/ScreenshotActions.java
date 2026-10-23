@@ -86,7 +86,7 @@ final class ScreenshotActions {
             Object popup = ui.popup.newInstance(context);
             List<Object> items = new ArrayList<Object>(2);
             items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Google" : "应用", engineIcon(context, selectedEngine < 0 ? 0 : selectedEngine), null));
-            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Yandex" : "网页（选择已保存截图上传）", engineIcon(context, selectedEngine < 0 ? 1 : selectedEngine), null));
+            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Yandex" : "网页", engineIcon(context, selectedEngine < 0 ? 1 : selectedEngine), null));
             ui.popupItems.invoke(popup, items);
             final Context app = context.getApplicationContext();
             final WeakReference<View> target = new WeakReference<View>(alert);
@@ -118,16 +118,18 @@ final class ScreenshotActions {
                                 View current = target.get();
                                 if (current == null || binding.closed
                                         || !ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
-                                Intent intent = web ? webIntent(app, engine) : resolveShare(app, engine, uri, null);
+                                if (web) {
+                                    closeRecognition(current, ui);
+                                    uploadAndOpen(app, engine, uri, binding.generation);
+                                    return;
+                                }
+                                Intent intent = resolveShare(app, engine, uri, null);
                                 if (intent == null) { toast(app, "未找到对应的识图应用"); return; }
                                 closeRecognition(current, ui);
                                 MAIN.postDelayed(() -> {
                                     // A newer recognition must not be interrupted by an older save.
                                     if (!ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
-                                    if (web) {
-                                        try { app.startActivity(intent); }
-                                        catch (Exception error) { toast(app, "无法打开默认浏览器"); }
-                                    } else launch(app, engine, uri, intent);
+                                    launch(app, engine, uri, intent);
                                 }, 320);
                             });
                             return ui.unit;
@@ -242,11 +244,38 @@ final class ScreenshotActions {
         return intent;
     }
 
-    private static Intent webIntent(Context app, int engine) {
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(engine == 0
-                ? "https://www.google.com/imghp" : "https://yandex.com/images/"));
+    private static void uploadAndOpen(Context app, int engine, Uri picture, long generation) {
+        try {
+            WRITER.execute(() -> {
+                try (java.io.InputStream stream = app.getContentResolver().openInputStream(picture)) {
+                    String result = WebImageSearch.upload(stream, engine);
+                    MAIN.post(() -> {
+                        if (!ScreenshotButtons.CAPTURES.isGeneration(generation)) return;
+                        try { app.startActivity(webIntent(app, result)); }
+                        catch (Exception error) { toast(app, "无法打开默认浏览器"); }
+                    });
+                } catch (Exception error) {
+                    // Do not log result URLs, screenshots or response bodies.
+                    XposedBridge.log("XiaobuLauncherHook: web image upload failed: " + error.getClass().getSimpleName());
+                    toast(app, "识图上传失败，请检查网络后重试");
+                }
+            });
+        } catch (RejectedExecutionException busy) { toast(app, "正在处理截图，请稍后重试"); }
+    }
+
+    private static Intent webIntent(Context app, String result) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(result));
         intent.addCategory(Intent.CATEGORY_BROWSABLE);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            Object value = app.getPackageManager().getClass()
+                    .getMethod("getDefaultBrowserPackageNameAsUser", int.class)
+                    .invoke(app.getPackageManager(), android.os.Process.myUid() / 100000);
+            if (value instanceof String && !((String) value).isEmpty()) {
+                intent.setPackage((String) value);
+                return intent;
+            }
+        } catch (Exception ignored) { }
         try {
             Intent generic = new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.org/"));
             generic.addCategory(Intent.CATEGORY_BROWSABLE);
@@ -319,3 +348,4 @@ final class ScreenshotActions {
         });
     }
 }
+

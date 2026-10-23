@@ -1,9 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="16"
-    android:versionName="2.0.2">
+    android:versionCode="17"
+    android:versionName="2.0.3">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <application android:label="小布识屏增强" android:hasCode="true"
         android:theme="@style/ModuleSettingsTheme" android:allowBackup="false">
         <meta-data android:name="xposedmodule" android:value="true" />
