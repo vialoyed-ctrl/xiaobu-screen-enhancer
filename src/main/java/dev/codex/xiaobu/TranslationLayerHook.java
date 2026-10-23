@@ -22,7 +22,7 @@ final class TranslationLayerHook {
     private static volatile boolean ready;
 
     static void install(ClassLoader loader) {
-        try {
+        try (HookTransaction hooks = new HookTransaction()) {
             Class<?> service = Class.forName("com.android.server.wm.WindowManagerService", false, loader);
             Class<?> session = Class.forName("com.android.server.wm.Session", false, loader);
             Class<?> token = Class.forName("com.android.server.wm.WindowToken", false, loader);
@@ -35,8 +35,9 @@ final class TranslationLayerHook {
             final Field windowToken = field(window, "mToken");
             // Resolve all required members before enabling any layer changes.
             token.getDeclaredMethod("getWindowLayerFromType");
-            XposedBridge.hookAllMethods(service, "addWindow", new XC_MethodHook() {
+            hooks.add(XposedBridge.hookAllMethods(service, "addWindow", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
+                    hook.setObjectExtra("xiaobu.previousTranslation", addingTranslation.get());
                     addingTranslation.set(Boolean.FALSE);
                     if (!ready || hook.args.length < 3) return;
                     try {
@@ -55,18 +56,22 @@ final class TranslationLayerHook {
                     }
                 }
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
-                    addingTranslation.remove();
+                    Object previous = hook.getObjectExtra("xiaobu.previousTranslation");
+                    if (previous instanceof Boolean) addingTranslation.set((Boolean) previous);
+                    else addingTranslation.remove();
                 }
-            });
-            XposedBridge.hookAllConstructors(token, new XC_MethodHook() {
+            }));
+            hooks.add(XposedBridge.hookAllConstructors(token, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                    if (ready && Boolean.TRUE.equals(addingTranslation.get())
-                            && hook.args.length > 2 && Integer.valueOf(OVERLAY).equals(hook.args[2])) {
-                        tokens.put(hook.thisObject, Boolean.TRUE);
-                    }
+                    try {
+                        if (ready && Boolean.TRUE.equals(addingTranslation.get())
+                                && hook.args.length > 2 && Integer.valueOf(OVERLAY).equals(hook.args[2])) {
+                            tokens.put(hook.thisObject, Boolean.TRUE);
+                        }
+                    } catch (Throwable ignored) { }
                 }
-            });
-            XposedHelpers.findAndHookMethod(token.getName(), loader, "getWindowLayerFromType",
+            }));
+            hooks.add(XposedHelpers.findAndHookMethod(token.getName(), loader, "getWindowLayerFromType",
                     new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam hook) {
                             if (ready && tokens.containsKey(hook.thisObject)
@@ -74,8 +79,8 @@ final class TranslationLayerHook {
                                 hook.setResult(Math.max(LAYER, (Integer) hook.getResult()));
                             }
                         }
-                    });
-            XposedBridge.hookAllConstructors(window, new XC_MethodHook() {
+                    }));
+            hooks.add(XposedBridge.hookAllConstructors(window, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     if (!ready || !Boolean.TRUE.equals(addingTranslation.get())) return;
                     try {
@@ -90,8 +95,9 @@ final class TranslationLayerHook {
                         XposedBridge.log("XiaobuLauncherHook: translation layer unchanged: " + error);
                     }
                 }
-            });
+            }));
             ready = true;
+            hooks.commit();
             XposedBridge.log("XiaobuLauncherHook: translation system layer hooks installed");
         } catch (Throwable error) {
             ready = false;

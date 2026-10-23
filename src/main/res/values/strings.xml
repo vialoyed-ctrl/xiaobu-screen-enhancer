@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gesture_observer_description">仅监听操作弹窗等窗口事件，帮助避让原应用实际弹出的操作菜单。不读取页面文字，不接管触摸，不模拟点击。需同时在 LSPosed 中启用本模块的系统框架作用域。</string>
+</resources>
