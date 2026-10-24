@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
@@ -68,6 +69,8 @@ final class LongPressBackend {
     private boolean reloadPosted;
     private long lastReportedTimeout = -1;
     private String lastConfigError;
+    private NavigationTap navigation;
+    private long lastNavigationLaunch;
 
     LongPressBackend(Context context, Object wm, ClassLoader loader) throws Exception {
         this.systemContext = context;
@@ -139,6 +142,8 @@ final class LongPressBackend {
                 try {
                     if (configurationGeneration.get() != generation) return;
                     snapshot = result;
+                    if (result != null) GestureSystemHook.log("configuration longPress=" + result.longPress
+                            + " navigationTap=" + result.navigationTap);
                     if (result == null || !result.allowed || !deviceAvailable(result.context)) {
                         monitorFailed = false;
                         stopMonitor();
@@ -160,8 +165,11 @@ final class LongPressBackend {
             Context app = contextForUser(user);
             Bundle data = app.getContentResolver().call(SETTINGS, "get", null, null);
             if (data == null) throw new IllegalStateException("Settings provider returned no configuration");
-            boolean allowed = data.getBoolean("enabled", false)
+            boolean longPress = data.getBoolean("enabled", false)
                     && data.getBoolean("observerConnected", false);
+            boolean navTap = data.getBoolean("navigationTap", false)
+                    && Settings.Secure.getInt(app.getContentResolver(), "navigation_mode", -1) == 2;
+            boolean allowed = longPress || navTap;
             int configuredTimeout = data.getInt("timeoutMs", 0);
             Set<String> excluded = new HashSet<String>();
             String text = data.getString("excluded", "");
@@ -175,7 +183,7 @@ final class LongPressBackend {
             String popupPackage = data.getString("lastActionPopupPackage", "");
             if (popupPackage == null) popupPackage = "";
             lastConfigError = null;
-            return new Snapshot(user, app, allowed, configuredTimeout,
+            return new Snapshot(user, app, allowed, longPress, navTap, configuredTimeout,
                     Collections.unmodifiableSet(excluded), popupTime, popupPackage);
         } catch (Throwable error) {
             String message = error.getClass().getSimpleName() + ": " + error.getMessage();
@@ -221,6 +229,7 @@ final class LongPressBackend {
     }
 
     private void stopMonitor() {
+        navigation = null;
         Candidate current = presses.current();
         if (current != null) discard(current);
         GestureInputReceiver oldReceiver = receiver;
@@ -245,6 +254,7 @@ final class LongPressBackend {
 
     void onMotionEvent(MotionEvent event) {
         if (receiver == null || !fromMonitoredDisplay(event)) return;
+        navigationEvent(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             Candidate current = presses.current();
@@ -262,7 +272,7 @@ final class LongPressBackend {
             if (previous != null) discard(previous);
             presses.release();
             Snapshot settings = snapshot;
-            if (settings == null || !settings.allowed || !deviceAvailable(settings.context)
+            if (settings == null || !settings.longPress || !deviceAvailable(settings.context)
                     || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
                     || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return;
             Focus focus = focusReader.read();
@@ -293,6 +303,71 @@ final class LongPressBackend {
                 return;
             }
         }
+    }
+
+    private void navigationEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN
+                || event.getPointerCount() != 1) { navigation = null; return; }
+        if (action == MotionEvent.ACTION_DOWN) {
+            navigation = null;
+            Snapshot settings = snapshot;
+            if (settings == null || !settings.navigationTap || !deviceAvailable(settings.context)
+                    || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
+                    || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER
+                    || event.getEventTime() - lastNavigationLaunch < 1200) return;
+            Focus focus = focusReader.read();
+            if (focus == null || excluded(settings, focus.packageName)) return;
+            Rect region = focusReader.navigationBar();
+            if (region == null) return;
+            float density = settings.context.getResources().getDisplayMetrics().density;
+            region.top = Math.max(region.top, region.bottom - Math.round(24 * density));
+            // Keep the tap target in the middle of the visible navigation window.
+            // Side back areas and application content never qualify.
+            int half = Math.min(region.width() / 2, Math.round(72 * density));
+            region.left = region.centerX() - half;
+            region.right = region.left + half * 2;
+            if (!region.contains((int) event.getX(), (int) event.getY())) return;
+            navigation = new NavigationTap(event.getX(), event.getY(), event.getEventTime(), focus,
+                    settings.userId, configurationGeneration.get(), ViewConfiguration.get(settings.context).getScaledTouchSlop());
+            return;
+        }
+        NavigationTap value = navigation;
+        if (value == null) return;
+        float dx = event.getX() - value.x, dy = event.getY() - value.y;
+        if (dx * dx + dy * dy > value.slop * value.slop || event.getEventTime() - value.time > 250) {
+            navigation = null; return;
+        }
+        for (int i = 0; i < event.getHistorySize(); i++) {
+            dx = event.getHistoricalX(0, i) - value.x; dy = event.getHistoricalY(0, i) - value.y;
+            if (dx * dx + dy * dy > value.slop * value.slop) { navigation = null; return; }
+        }
+        if (action != MotionEvent.ACTION_UP) return;
+        navigation = null;
+        // Configuration is kept current by the authenticated provider + change broadcasts.
+        // Do not enqueue a provider/package-manager round trip on every tap: a busy
+        // settings queue used to silently discard otherwise valid navigation taps.
+        handler.post(() -> {
+            Snapshot fresh = snapshot;
+                try {
+                    if (fresh == null || !fresh.navigationTap || fresh.userId != value.userId
+                            || value.configuration != configurationGeneration.get()
+                            || SystemClock.uptimeMillis() - value.time > 750
+                            || SystemClock.uptimeMillis() - lastNavigationLaunch < 1200
+                            || !deviceAvailable(fresh.context)) return;
+                    Focus focus = focusReader.read();
+                    if (focus == null || focus.window != value.focus.window
+                            || excluded(fresh, focus.packageName) || focusReader.navigationBar() == null) return;
+                    long identity = Binder.clearCallingIdentity();
+                    try {
+                        if (RecognitionStarter.start(fresh.context, entranceIntent()) != null) {
+                            lastNavigationLaunch = SystemClock.uptimeMillis();
+                            vibrate(40L);
+                            GestureSystemHook.log("navigation tap recognition requested");
+                        }
+                    } finally { Binder.restoreCallingIdentity(identity); }
+                } catch (Throwable error) { GestureSystemHook.log("navigation tap isolated: " + error); }
+        });
     }
 
     private static boolean moved(Candidate value, float x, float y) {
@@ -326,9 +401,10 @@ final class LongPressBackend {
     private void finishFinalCheck(Candidate value, Snapshot fresh) {
         try {
             if (!valid(value)) { discard(value); return; }
-            if (fresh == null || !fresh.allowed || fresh.userId != value.userId) {
+            if (fresh == null || !fresh.longPress || fresh.userId != value.userId) {
                 snapshot = fresh;
-                stopMonitor();
+                discard(value);
+                if (fresh == null || !fresh.allowed) stopMonitor();
                 return;
             }
             if (excluded(fresh, value.focus.packageName) || !deviceAvailable(fresh.context)
@@ -351,7 +427,7 @@ final class LongPressBackend {
             try {
                 discard(value);
                 presses.block();
-                ComponentName started = fresh.context.startService(entranceIntent());
+                ComponentName started = RecognitionStarter.start(fresh.context, entranceIntent());
                 if (started != null) {
                     try { pilfer.invoke(monitor); }
                     catch (Throwable unavailable) {
@@ -516,10 +592,14 @@ final class LongPressBackend {
     }
 
     private void vibrate() {
+        vibrate(12L);
+    }
+
+    private void vibrate(long durationMs) {
         try {
             Vibrator vibrator = (Vibrator) systemContext.getSystemService(Context.VIBRATOR_SERVICE);
             if (vibrator != null && vibrator.hasVibrator()) {
-                vibrator.vibrate(VibrationEffect.createOneShot(12L, VibrationEffect.DEFAULT_AMPLITUDE));
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE));
             }
         } catch (Throwable ignored) { }
     }
@@ -555,20 +635,35 @@ final class LongPressBackend {
         final int userId;
         final Context context;
         final boolean allowed;
+        final boolean longPress;
+        final boolean navigationTap;
         final int timeoutMs;
         final Set<String> excluded;
         final long popupTime;
         final String popupPackage;
 
-        Snapshot(int user, Context context, boolean allowed, int timeout, Set<String> excluded,
+        Snapshot(int user, Context context, boolean allowed, boolean longPress, boolean navigationTap, int timeout, Set<String> excluded,
                 long popup, String popupPackage) {
             this.userId = user;
             this.context = context;
             this.allowed = allowed;
+            this.longPress = longPress;
+            this.navigationTap = navigationTap;
             this.timeoutMs = timeout;
             this.excluded = excluded;
             this.popupTime = popup;
             this.popupPackage = popupPackage;
+        }
+    }
+
+    private static final class NavigationTap {
+        final float x, y;
+        final long time, configuration;
+        final Focus focus;
+        final int userId, slop;
+        NavigationTap(float x, float y, long time, Focus focus, int userId, long configuration, int slop) {
+            this.x = x; this.y = y; this.time = time; this.focus = focus;
+            this.userId = userId; this.configuration = configuration; this.slop = slop;
         }
     }
 
@@ -600,6 +695,18 @@ final class LongPressBackend {
                 WindowManager.LayoutParams layout = (WindowManager.LayoutParams) attrs.get(window);
                 if (layout == null || layout.packageName == null) return null;
                 return new Focus(window, layout.packageName);
+            } catch (Throwable ignored) { return null; }
+        }
+
+        synchronized Rect navigationBar() {
+            try {
+                Object content = display.invoke(wm);
+                if (content == null) return null;
+                Object policy = GestureSystemHook.method(content.getClass(), "getDisplayPolicy").invoke(content);
+                Object bar = GestureSystemHook.method(policy.getClass(), "getNavigationBar").invoke(policy);
+                if (bar == null || !Boolean.TRUE.equals(GestureSystemHook.method(bar.getClass(), "isVisible").invoke(bar))) return null;
+                Rect bounds = new Rect((Rect) GestureSystemHook.method(bar.getClass(), "getFrame").invoke(bar));
+                return bounds.isEmpty() || bounds.width() <= bounds.height() ? null : bounds;
             } catch (Throwable ignored) { return null; }
         }
     }

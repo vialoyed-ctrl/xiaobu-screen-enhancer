@@ -65,7 +65,8 @@ public final class WebSearchActivity extends Activity {
             try {
                 byte[] compressed = searchImage();
                 android.util.Log.i("XiaobuWebSearch", "image.ready engine=" + engine + " bytes=" + compressed.length);
-                String link = WebImageSearch.upload(new ByteArrayInputStream(compressed), engine);
+                String link = WebImageSearch.upload(new ByteArrayInputStream(compressed), engine, host ->
+                        runOnUiThread(() -> { if (!destroyed) message.setText("正在上传到 " + host + "…"); }));
                 android.util.Log.i("XiaobuWebSearch", "result.ready engine=" + engine + " active=" + !destroyed);
                 runOnUiThread(() -> { if (!destroyed) { result = link; openResult(); } });
             } catch (Exception error) {

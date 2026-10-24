@@ -24,6 +24,7 @@ public final class GestureSettingsProvider extends ContentProvider {
         if (!"get".equals(method)) throw new IllegalArgumentException("Only the get operation is supported");
         Bundle result = new Bundle();
         result.putBoolean("enabled", GestureConfig.enabled(getContext()));
+        result.putBoolean("navigationTap", GestureConfig.navigationTap(getContext()));
         result.putBoolean("observerConnected", GestureObserverService.isConnected());
         result.putString("excluded", GestureConfig.excludedString(getContext()));
         result.putInt("timeoutMs", GestureConfig.timeoutMs(getContext()));

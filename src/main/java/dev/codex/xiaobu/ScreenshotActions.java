@@ -75,11 +75,12 @@ final class ScreenshotActions {
     private static void showMenu(View alert, View anchor, ScreenshotButtons.Binding binding,
             ScreenshotButtons.NativeUi ui, final int selectedEngine) {
         Context context = alert.getContext();
-        if (!ScreenshotButtons.CAPTURES.hasImage(binding.generation)) {
+        if (!binding.isCurrent()) return;
+        if (!binding.session.hasImage(binding.generation)) {
             toast(context, "未找到识屏截图，请重新启动识屏后再试");
             return;
         }
-        if (ScreenshotButtons.CAPTURES.actionUnavailable(binding.generation)) return;
+        if (binding.session.actionUnavailable(binding.generation)) return;
         try {
             Object previous = binding.popup.get();
             if (previous != null && Boolean.TRUE.equals(ui.popupShowing.invoke(previous))) return;
@@ -98,7 +99,7 @@ final class ScreenshotActions {
                             int choice = (Integer) args[1];
                             if (choice < 0 || choice >= 2 || !selected.compareAndSet(false, true)) return ui.unit;
                             View view = target.get();
-                            if (view == null || binding.closed) return ui.unit;
+                            if (view == null || !binding.isCurrent()) return ui.unit;
                             if (selectedEngine < 0) {
                                 MAIN.postDelayed(() -> {
                                     try { if (!binding.closed) showMenu(view, anchor, binding, ui, choice); }
@@ -117,7 +118,7 @@ final class ScreenshotActions {
                             if (action != null) enqueue(app, action, uri -> {
                                 View current = target.get();
                                 if (current == null || binding.closed
-                                        || !ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
+                                        || !binding.isCurrent()) return;
                                 if (web) {
                                     closeRecognition(current, ui);
                                     uploadAndOpen(app, engine, uri, binding.generation);
@@ -128,7 +129,7 @@ final class ScreenshotActions {
                                 closeRecognition(current, ui);
                                 MAIN.postDelayed(() -> {
                                     // A newer recognition must not be interrupted by an older save.
-                                    if (!ScreenshotButtons.CAPTURES.isGeneration(binding.generation)) return;
+                                    if (!binding.isCurrent()) return;
                                     launch(app, engine, uri, intent);
                                 }, 320);
                             });
@@ -156,8 +157,9 @@ final class ScreenshotActions {
     }
 
     private static ScreenshotSession.Action<Bitmap> claim(Context app, ScreenshotButtons.Binding binding) {
-        ScreenshotSession.Action<Bitmap> action = ScreenshotButtons.CAPTURES.beginAction(binding.generation);
-        if (action == null && !ScreenshotButtons.CAPTURES.hasImage(binding.generation)) {
+        if (!binding.isCurrent()) return null;
+        ScreenshotSession.Action<Bitmap> action = binding.session.beginAction(binding.generation);
+        if (action == null && !binding.session.hasImage(binding.generation)) {
             toast(app, "未找到识屏截图，请重新启动识屏后再试");
         }
         return action;

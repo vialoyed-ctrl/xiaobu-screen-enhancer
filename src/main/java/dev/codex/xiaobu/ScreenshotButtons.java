@@ -3,13 +3,7 @@ package dev.codex.xiaobu;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.ColorFilter;
-import android.graphics.Paint;
-import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import java.lang.ref.WeakReference;
@@ -105,7 +99,7 @@ final class ScreenshotButtons {
                         for (Binding binding : new ArrayList<Binding>(bindings.values())) {
                             if (binding.activity.get() == activity) {
                                 binding.closed = true;
-                                if (!activity.isChangingConfigurations()) CAPTURES.endCapture(binding.generation);
+                                if (!activity.isChangingConfigurations()) binding.session.endCapture(binding.generation);
                             }
                         }
                     } catch (Throwable error) { log("screenshot UI release failed", error); }
@@ -158,16 +152,39 @@ final class ScreenshotButtons {
     }
 
     static final class Binding {
+        final ScreenshotSession<Bitmap> session;
         final long generation;
+        final long recognitionGeneration;
         final WeakReference<Activity> activity;
         Object searchCard;
         Object saveCard;
         WeakReference<Object> popup = new WeakReference<Object>(null);
         boolean closed;
         Binding(long generation, Activity activity) {
+            this(CAPTURES, generation, activity);
+        }
+        Binding(ScreenshotSession<Bitmap> session, long generation, Activity activity) {
+            this.session = session;
             this.generation = generation;
+            this.recognitionGeneration = CAPTURES.generation();
             this.activity = new WeakReference<Activity>(activity);
         }
+        boolean isCurrent() {
+            return !closed && CAPTURES.isGeneration(recognitionGeneration) && session.isGeneration(generation);
+        }
+    }
+
+    static Binding selectedImage(View menu, Bitmap source) {
+        Binding old = bindings.remove(menu);
+        if (old != null) { old.closed = true; old.session.endCapture(old.generation); }
+        ScreenshotSession<Bitmap> session = new ScreenshotSession<Bitmap>(bitmap -> {
+            if (!bitmap.isRecycled()) bitmap.recycle();
+        });
+        long generation = session.beginCapture();
+        session.publish(generation, source.copy(Bitmap.Config.ARGB_8888, false));
+        Binding binding = new Binding(session, generation, ScreenshotActions.activity(menu.getContext()));
+        bindings.put(menu, binding);
+        return binding;
     }
 
     /** Cached per host process/class loader; no Activity or View is retained here. */
@@ -244,8 +261,8 @@ final class ScreenshotButtons {
             Object search = binding.searchCard;
             Object save = binding.saveCard;
             if (search == null || save == null) {
-                search = newCard(SEARCH_LABEL, new ActionIcon(context, true), template);
-                save = newCard(SAVE_LABEL, new ActionIcon(context, false), template);
+                search = newCard(SEARCH_LABEL, new ActionIcon(context, 1), template);
+                save = newCard(SAVE_LABEL, new ActionIcon(context, 0), template);
             }
             result.add(index, search);
             result.add(index + 1, save);
@@ -260,43 +277,7 @@ final class ScreenshotButtons {
         }
     }
 
-    private static final class ActionIcon extends Drawable {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF outline = new RectF(3, 3, 21, 21);
-        private final int size;
-        private final boolean search;
-        ActionIcon(Context context, boolean search) {
-            this.search = search;
-            size = Math.round(24 * context.getResources().getDisplayMetrics().density);
-            paint.setColor(Color.WHITE);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.8f);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-        }
-        @Override public void draw(Canvas canvas) {
-            Rect bounds = getBounds();
-            canvas.save();
-            canvas.translate(bounds.left, bounds.top);
-            canvas.scale(bounds.width() / 24f, bounds.height() / 24f);
-            if (search) {
-                canvas.drawCircle(10, 10, 6.5f, paint);
-                canvas.drawLine(15, 15, 21, 21, paint);
-            } else {
-                canvas.drawRoundRect(outline, 2, 2, paint);
-                canvas.drawLine(8, 3, 8, 10, paint);
-                canvas.drawLine(8, 10, 16, 10, paint);
-                canvas.drawLine(16, 10, 16, 3, paint);
-                canvas.drawLine(7, 20, 7, 15, paint);
-                canvas.drawLine(7, 15, 17, 15, paint);
-                canvas.drawLine(17, 15, 17, 20, paint);
-            }
-            canvas.restore();
-        }
-        @Override public int getIntrinsicWidth() { return size; }
-        @Override public int getIntrinsicHeight() { return size; }
-        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
-        @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    private static final class ActionIcon extends RecognitionActionIcon {
+        ActionIcon(Context context, int kind) { super(context, kind); }
     }
 }

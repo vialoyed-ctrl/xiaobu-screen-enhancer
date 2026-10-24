@@ -13,7 +13,7 @@ public final class LauncherHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam params) {
-        if ("android".equals(params.packageName)) {
+        if ("android".equals(params.packageName) || "system".equals(params.packageName)) {
             TranslationLayerHook.install(params.classLoader);
             dev.codex.xiaobu.gesture.GestureSystemHook.install(params.classLoader);
             return;
@@ -91,6 +91,9 @@ public final class LauncherHook implements IXposedHookLoadPackage {
             XposedBridge.log("XiaobuLauncherHook: translation card hook failed: " + error);
         }
         installSaveButton(params.classLoader);
+        SelectionToolsHook.install(params.classLoader);
+        SelectedTextHook.install();
+        InPlaceWordSelection.install(params.classLoader);
     }
 
     private static void installTranslationHooks(ClassLoader loader) {

@@ -24,6 +24,15 @@ public final class GestureConfig {
         return preferences(context).getBoolean("enabled", false);
     }
 
+    public static boolean navigationTap(Context context) {
+        return preferences(context).getBoolean("navigationTap", true);
+    }
+
+    static void setNavigationTap(Context context, boolean value) {
+        preferences(context).edit().putBoolean("navigationTap", value).apply();
+        notifyChanged(context);
+    }
+
     public static int timeoutMs(Context context) {
         int value = preferences(context).getInt("timeoutMs", 0);
         return value == 0 ? 0 : Math.max(200, Math.min(2000, value));
