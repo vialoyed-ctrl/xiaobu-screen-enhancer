@@ -27,15 +27,11 @@ final class WebImageSearch {
         byte[] image = read(picture, MAX_IMAGE);
         if (image.length == 0) throw new IOException("Empty screenshot");
         String direct = HostUploadPipeline.upload(image, Arrays.asList(
-                new HostUploadPipeline.Host("postimg.cc", bytes -> {
-                    // Its website explicitly rejects automated uploads. Without official API
-                    // authorization, skip it rather than bypassing its upload restriction.
-                    throw new IOException("Postimages official API authorization required");
-                }),
-                new HostUploadPipeline.Host("IM.GE", WebImageSearch::imge),
-                new HostUploadPipeline.Host("pixhost.top", WebImageSearch::pixhost)), progress);
+                new HostUploadPipeline.Host("pixhost.top", WebImageSearch::pixhost),
+                new HostUploadPipeline.Host("Pixhost", WebImageSearch::pixhostApi),
+                new HostUploadPipeline.Host("IM.GE", WebImageSearch::imge)), progress);
         return (engine == 0 ? "https://www.google.com/searchbyimage?image_url="
-                : "https://yandex.com/images/search?rpt=imageview&url=") + URLEncoder.encode(direct, "UTF-8");
+                : "https://yandex.com/images/touch/search?rpt=imageview&url=") + URLEncoder.encode(direct, "UTF-8");
     }
 
     private static String imge(byte[] image) throws Exception {
@@ -59,6 +55,20 @@ final class WebImageSearch {
         return imageUrl(response.getString("url"), "pixhost.top");
     }
 
+    private static String pixhostApi(byte[] image) throws Exception {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("content_type", "1");
+        // The official API has no expiration field; do not request temporary storage.
+        JSONObject response = post("https://api.pixhost.to/images", "img", fields, image);
+        String thumb = imageUrl(response.getString("th_url"), "pixhost.to");
+        URL url = new URL(thumb);
+        if (!url.getHost().matches("t[0-9]+\\.pixhost\\.to") || !url.getPath().startsWith("/thumbs/"))
+            throw new IOException("Unexpected Pixhost thumbnail");
+        // The official image page publishes this original URL for each thumbnail.
+        return imageUrl("https://img" + url.getHost().substring(1) + "/images/"
+                + url.getPath().substring("/thumbs/".length()), "pixhost.to");
+    }
+
     private static JSONObject post(String endpoint, String fileField, Map<String, String> fields, byte[] image) throws Exception {
         String boundary = "XiaobuImage" + Long.toHexString(System.nanoTime());
         boolean jpeg = image.length > 2 && image[0] == (byte) 0xff && image[1] == (byte) 0xd8;
@@ -73,11 +83,11 @@ final class WebImageSearch {
         byte[] prefix = header.toByteArray(), suffix = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         try {
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(20000);
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(7000);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("User-Agent", "XiaobuScreenEnhancer/2.1.0");
+            connection.setRequestProperty("User-Agent", "XiaobuScreenEnhancer/2.1.2");
             connection.setRequestProperty("Accept", "application/json");
             String origin = "https://" + new URL(endpoint).getHost();
             connection.setRequestProperty("Origin", origin);

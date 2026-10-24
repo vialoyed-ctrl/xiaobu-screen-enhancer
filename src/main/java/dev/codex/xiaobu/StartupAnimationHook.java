@@ -100,6 +100,7 @@ final class StartupAnimationHook {
                         }
                     });
             scanReady = true;
+            installUnusedScanRenderer(loader);
             XposedBridge.log("XiaobuLauncherHook: startup scan hooks installed");
         } catch (Throwable error) {
             XposedBridge.log("XiaobuLauncherHook: startup scan hooks unavailable: " + error);
@@ -160,6 +161,28 @@ final class StartupAnimationHook {
             XposedBridge.log("XiaobuLauncherHook: recognition activity fast entry installed");
         } catch (Throwable error) {
             XposedBridge.log("XiaobuLauncherHook: recognition activity entry hook unavailable: " + error);
+        }
+    }
+
+    private static void installUnusedScanRenderer(ClassLoader loader) {
+        // The scan window is invisible and its animation callbacks are already
+        // replaced above. Starting its GL renderer still stalls the first frame,
+        // particularly over the launcher. Keep native screenshot preparation in t/z.
+        try (HookTransaction hooks = new HookTransaction()) {
+            String collect = "com.oplus.infocollection.floating.CollectAnimator";
+            XC_MethodHook skip = new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam hook) {
+                    if (scanReady) hook.setResult(null);
+                }
+            };
+            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "G", skip));
+            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "F", "android.content.Context",
+                    "com.oplus.infocollection.data.CollectionStartInfo", skip));
+            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "j", "android.graphics.Bitmap", skip));
+            hooks.commit();
+            XposedBridge.log("XiaobuLauncherHook: unused scan renderer startup bypassed");
+        } catch (Throwable error) {
+            XposedBridge.log("XiaobuLauncherHook: native scan renderer preparation retained: " + error);
         }
     }
 

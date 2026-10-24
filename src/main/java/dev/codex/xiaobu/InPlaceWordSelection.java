@@ -50,7 +50,7 @@ final class InPlaceWordSelection {
                     if (!installed) return;
                     Object model = rendererModel.get(hook.thisObject);
                     Index index = indices.get(model);
-                    if (index == null || index.selection == null || index.data.get() != ui.data.get(model)) return;
+                    if (index == null || !index.ownedSelection || index.data.get() != ui.data.get(model)) return;
                     Paint paint = (Paint) selectionPaint.get(hook.thisObject);
                     paintColors.put(hook.thisObject, paint.getColor());
                     paint.setColor(0x73efb4c9);
@@ -63,13 +63,13 @@ final class InPlaceWordSelection {
             XposedHelpers.findAndHookMethod(ui.model, "G0", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
                     Index index = indices.get(hook.thisObject);
-                    if (index != null && index.selection != null) hook.setResult(true);
+                    if (index != null && index.ownedSelection) hook.setResult(true);
                 }
             });
             XposedHelpers.findAndHookMethod(ui.model, "getSelectedText", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) throws Throwable {
                     Index index = indices.get(hook.thisObject);
-                    if (index != null && index.selection != null && index.data.get() == ui.data.get(hook.thisObject)
+                    if (index != null && index.ownedSelection && index.data.get() == ui.data.get(hook.thisObject)
                             && hook.getResult() instanceof String)
                         hook.setResult(SelectedText.singleLine((String) hook.getResult()));
                 }
@@ -93,8 +93,10 @@ final class InPlaceWordSelection {
                             touch.data = new WeakReference<>(ui.data.get(model));
                             Index index = indices.get(model);
                             touch.lastWord = wordAt(index, hit);
-                            boolean[] baseline = index.selection != null ? index.selection
-                                    : (boolean[]) ui.mask.invoke(ui.data.get(model));
+                            // Native blank taps, select-all and picture selection can change
+                            // the mask outside this controller. The native mask is the sole
+                            // source of truth; a cached copy resurrects cleared selections.
+                            boolean[] baseline = (boolean[]) ui.mask.invoke(ui.data.get(model));
                             touch.drag = new WordSelectionDrag(baseline, index.ranges, touch.lastWord);
                             View view = (View) ui.controllerView.get(hook.thisObject);
                             touch.slop = android.view.ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
@@ -186,7 +188,7 @@ final class InPlaceWordSelection {
                                      boolean[] next, boolean finish) throws Exception {
         Index index = indices.get(model);
         apply(ui, model, next);
-        index.selection = next.clone();
+        index.ownedSelection = true;
 
         ui.cursor.invoke(model, range[0], range[1]);
 
@@ -274,7 +276,7 @@ final class InPlaceWordSelection {
     private static final class Index {
         final WeakReference<Object> data;
         final List<int[]> ranges;
-        boolean[] selection;
+        boolean ownedSelection;
         final List<Token> tokens;
         Index(Object data, List<int[]> ranges, List<Token> tokens) {
             this.data = new WeakReference<Object>(data); this.ranges = ranges; this.tokens = tokens;

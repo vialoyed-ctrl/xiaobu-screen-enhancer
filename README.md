@@ -2,7 +2,7 @@
 
 适用于 ColorOS 的 LSPosed 模块，扩展小布识屏和屏幕翻译的可用页面，提供识图、保存截图和快速启动，并支持可选的全屏单指长按。
 
-[下载 v2.1.0 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.1.0/XiaobuScreenEnhancer-v2.1.0.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.1.0)
+[下载 v2.1.2 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.1.2/XiaobuScreenEnhancer-v2.1.2.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.1.2)
 
 ## 功能
 
@@ -24,13 +24,13 @@
 
 ## 使用
 
-安装 `XiaobuScreenEnhancer-v2.1.0.apk`，在 LSPosed 中启用模块并勾选推荐作用域：**小布识屏、翻译、系统框架**，然后重启手机。更新系统框架中的代码后也需要重启。
+安装 `XiaobuScreenEnhancer-v2.1.2.apk`，在 LSPosed 中启用模块并勾选推荐作用域：**小布识屏、翻译、系统框架**，然后重启手机。更新系统框架中的代码后也需要重启。
 
 如需单指长按，打开模块设置，开启开关，并在系统辅助功能中开启 **“小布识屏增强 · 长按检测”**。默认跟随系统双指长按时长，再等待约 100 毫秒避让原生操作；同一次按住只触发一次，并轻震提示。
 
 长按检测服务只接收操作弹窗等窗口事件的类型、应用包名和时间，不读取页面文字或节点，也不申请模拟手势能力。部分游戏或自绘控件不报告原生长按事件，无法可靠区分时可将应用加入排除列表。
 
-网页识图使用 IM.GE，不过期并标记 NSFW；失败自动尝试 pixhost.top。Postimg 需要官方 API 授权，当前自动跳过。图床图片可能长期公开保留。
+网页识图优先使用 pixhost.top，失败依次尝试 Pixhost 官方 API 和 IM.GE；使用原图直链，不设置自动过期，支持 NSFW 标记的网站默认开启。图床图片可能长期公开保留，实际保留期限由服务方决定。
 
 ## 兼容性
 

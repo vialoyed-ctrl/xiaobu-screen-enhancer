@@ -71,6 +71,50 @@ final class LongPressBackend {
     private String lastConfigError;
     private NavigationTap navigation;
     private long lastNavigationLaunch;
+    private NavigationTapShield navigationShield;
+    private boolean shieldFailed;
+    private final Runnable refreshShield = new Runnable() {
+        @Override public void run() {
+            updateNavigationShield();
+            if (receiver != null && snapshot != null && snapshot.navigationTap && !shieldFailed)
+                handler.postDelayed(this, 500L);
+        }
+    };
+
+    private void scheduleShieldRefresh() {
+        Handler target = handler;
+        if (target == null) return;
+        target.removeCallbacks(refreshShield);
+        target.post(refreshShield);
+    }
+
+    private void updateNavigationShield() {
+        try {
+            Rect region = null;
+            Snapshot settings = snapshot;
+            if (!shieldFailed && receiver != null && settings != null && settings.navigationTap
+                    && deviceAvailable(settings.context)) {
+                Focus focus = focusReader.read();
+                if (focus != null && !excluded(settings, focus.packageName)) {
+                    region = focusReader.navigationBar();
+                    if (region != null) {
+                        float density = settings.context.getResources().getDisplayMetrics().density;
+                        region.top = Math.max(region.top, region.bottom - Math.round(16 * density));
+                        int half = Math.min(region.width() / 2, Math.round(60 * density));
+                        int center = region.centerX();
+                        region.left = center - half;
+                        region.right = center + half;
+                    }
+                }
+            }
+            if (navigationShield == null && region != null) navigationShield = new NavigationTapShield(systemContext);
+            if (navigationShield != null) navigationShield.update(region);
+        } catch (Throwable error) {
+            shieldFailed = true;
+            if (navigationShield != null) navigationShield.remove();
+            GestureSystemHook.log("navigation tap disabled to prevent app click-through: " + error);
+        }
+    }
 
     LongPressBackend(Context context, Object wm, ClassLoader loader) throws Exception {
         this.systemContext = context;
@@ -150,6 +194,7 @@ final class LongPressBackend {
                         return;
                     }
                     if (!monitorFailed && receiver == null) startMonitor();
+                    scheduleShieldRefresh();
                 } catch (Throwable error) {
                     stopMonitor();
                     GestureSystemHook.log("reload isolated: " + error);
@@ -229,6 +274,8 @@ final class LongPressBackend {
     }
 
     private void stopMonitor() {
+        handler.removeCallbacks(refreshShield);
+        if (navigationShield != null) navigationShield.remove();
         navigation = null;
         Candidate current = presses.current();
         if (current != null) discard(current);
@@ -277,6 +324,7 @@ final class LongPressBackend {
                     || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return;
             Focus focus = focusReader.read();
             if (focus == null || excluded(settings, focus.packageName)) return;
+            if (navigationShield != null && navigationShield.contains(event.getX(), event.getY())) return;
             long timeout = timeout(settings);
             int slop = ViewConfiguration.get(settings.context).getScaledTouchSlop();
             Candidate next = new Candidate(event.getEventTime(), event.getPointerId(0),
@@ -318,16 +366,9 @@ final class LongPressBackend {
                     || event.getEventTime() - lastNavigationLaunch < 1200) return;
             Focus focus = focusReader.read();
             if (focus == null || excluded(settings, focus.packageName)) return;
-            Rect region = focusReader.navigationBar();
-            if (region == null) return;
-            float density = settings.context.getResources().getDisplayMetrics().density;
-            region.top = Math.max(region.top, region.bottom - Math.round(24 * density));
-            // Keep the tap target in the middle of the visible navigation window.
-            // Side back areas and application content never qualify.
-            int half = Math.min(region.width() / 2, Math.round(72 * density));
-            region.left = region.centerX() - half;
-            region.right = region.left + half * 2;
-            if (!region.contains((int) event.getX(), (int) event.getY())) return;
+            // A monitor cannot consume a tap after UP. Only recognize sequences
+            // whose DOWN was protected by the real input surface.
+            if (navigationShield == null || !navigationShield.contains(event.getX(), event.getY())) return;
             navigation = new NavigationTap(event.getX(), event.getY(), event.getEventTime(), focus,
                     settings.userId, configurationGeneration.get(), ViewConfiguration.get(settings.context).getScaledTouchSlop());
             return;
@@ -503,6 +544,7 @@ final class LongPressBackend {
     }
 
     void onFocusMayHaveChanged() {
+        scheduleShieldRefresh();
         Candidate current = presses.current();
         if (current == null || current.cancelled) return;
         Focus focus = focusReader.read();
