@@ -69,7 +69,7 @@ final class LongPressBackend {
     private boolean reloadPosted;
     private long lastReportedTimeout = -1;
     private String lastConfigError;
-    private boolean navigationPending;
+    private NavigationTap navigation;
     private long lastNavigationLaunch;
     private NavigationTapShield navigationShield;
     private boolean shieldFailed;
@@ -275,7 +275,7 @@ final class LongPressBackend {
     private void stopMonitor() {
         handler.removeCallbacks(refreshShield);
         if (navigationShield != null) navigationShield.remove();
-        navigationPending = false;
+        navigation = null;
         Candidate current = presses.current();
         if (current != null) discard(current);
         GestureInputReceiver oldReceiver = receiver;
@@ -353,47 +353,63 @@ final class LongPressBackend {
     }
 
     private void navigationEvent(MotionEvent event) {
-        // DOWN is the sole trigger for both handle taps and the surrounding touch area.
-        // MOVE/UP cannot queue another launch for this contact.
-        if (event.getActionMasked() != MotionEvent.ACTION_DOWN) return;
-        Snapshot settings = snapshot;
-        if (navigationPending || settings == null || !settings.navigationTap
-                || !deviceAvailable(settings.context) || event.getPointerCount() != 1
-                || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
-                || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER
-                || SystemClock.uptimeMillis() - lastNavigationLaunch < 1200) return;
-        Focus initialFocus = focusReader.read();
-        if (initialFocus == null || excluded(settings, initialFocus.packageName)
-                || navigationShield == null || !navigationShield.contains(event.getX(), event.getY())) return;
-        final int userId = settings.userId;
-        final long generation = configurationGeneration.get();
-        final long downTime = event.getEventTime();
-        final float x = event.getX(), y = event.getY();
-        navigationPending = true;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN
+                || event.getPointerCount() != 1) { navigation = null; return; }
+        if (action == MotionEvent.ACTION_DOWN) {
+            navigation = null;
+            Snapshot settings = snapshot;
+            if (settings == null || !settings.navigationTap || !deviceAvailable(settings.context)
+                    || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
+                    || event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER
+                    || event.getEventTime() - lastNavigationLaunch < 1200) return;
+            Focus focus = focusReader.read();
+            if (focus == null || excluded(settings, focus.packageName)) return;
+            // A monitor cannot consume a tap after UP. Only recognize sequences
+            // whose DOWN was protected by the real input surface.
+            if (navigationShield == null || !navigationShield.contains(event.getX(), event.getY())) return;
+            navigation = new NavigationTap(event.getX(), event.getY(), event.getEventTime(), focus,
+                    settings.userId, configurationGeneration.get(), ViewConfiguration.get(settings.context).getScaledTouchSlop());
+            return;
+        }
+        NavigationTap value = navigation;
+        if (value == null) return;
+        float dx = event.getX() - value.x, dy = event.getY() - value.y;
+        if (dx * dx + dy * dy > value.slop * value.slop || event.getEventTime() - value.time > 250) {
+            navigation = null; return;
+        }
+        for (int i = 0; i < event.getHistorySize(); i++) {
+            dx = event.getHistoricalX(0, i) - value.x; dy = event.getHistoricalY(0, i) - value.y;
+            if (dx * dx + dy * dy > value.slop * value.slop) { navigation = null; return; }
+        }
+        if (action != MotionEvent.ACTION_UP) return;
+        navigation = null;
+        // Configuration is kept current by the authenticated provider + change broadcasts.
+        // Do not enqueue a provider/package-manager round trip on every tap: a busy
+        // settings queue used to silently discard otherwise valid navigation taps.
         handler.post(() -> {
-            try {
-                Snapshot fresh = snapshot;
-                if (fresh == null || !fresh.navigationTap || fresh.userId != userId
-                        || generation != configurationGeneration.get()
-                        || SystemClock.uptimeMillis() - downTime > 750
-                        || SystemClock.uptimeMillis() - lastNavigationLaunch < 1200
-                        || !deviceAvailable(fresh.context)
-                        || navigationShield == null || !navigationShield.contains(x, y)) return;
-                Focus focus = focusReader.read();
-                if (focus == null || focus.window != initialFocus.window
-                        || excluded(fresh, focus.packageName)) return;
-                long identity = Binder.clearCallingIdentity();
+            Snapshot fresh = snapshot;
                 try {
-                    if (RecognitionStarter.start(fresh.context, entranceIntent()) != null) {
-                        lastNavigationLaunch = SystemClock.uptimeMillis();
-                        vibrate(40L);
-                        GestureSystemHook.log("navigation touch recognition requested");
-                    }
-                } finally { Binder.restoreCallingIdentity(identity); }
-            } catch (Throwable error) { GestureSystemHook.log("navigation touch isolated: " + error); }
-            finally { navigationPending = false; }
+                    if (fresh == null || !fresh.navigationTap || fresh.userId != value.userId
+                            || value.configuration != configurationGeneration.get()
+                            || SystemClock.uptimeMillis() - value.time > 750
+                            || SystemClock.uptimeMillis() - lastNavigationLaunch < 1200
+                            || !deviceAvailable(fresh.context)) return;
+                    Focus focus = focusReader.read();
+                    if (focus == null || focus.window != value.focus.window
+                            || excluded(fresh, focus.packageName)) return;
+                    long identity = Binder.clearCallingIdentity();
+                    try {
+                        if (RecognitionStarter.start(fresh.context, entranceIntent()) != null) {
+                            lastNavigationLaunch = SystemClock.uptimeMillis();
+                            vibrate(40L);
+                            GestureSystemHook.log("navigation tap recognition requested");
+                        }
+                    } finally { Binder.restoreCallingIdentity(identity); }
+                } catch (Throwable error) { GestureSystemHook.log("navigation tap isolated: " + error); }
         });
     }
+
     private static boolean moved(Candidate value, float x, float y) {
         float dx = x - value.x;
         float dy = y - value.y;
@@ -678,6 +694,17 @@ final class LongPressBackend {
             this.excluded = excluded;
             this.popupTime = popup;
             this.popupPackage = popupPackage;
+        }
+    }
+
+    private static final class NavigationTap {
+        final float x, y;
+        final long time, configuration;
+        final Focus focus;
+        final int userId, slop;
+        NavigationTap(float x, float y, long time, Focus focus, int userId, long configuration, int slop) {
+            this.x = x; this.y = y; this.time = time; this.focus = focus;
+            this.userId = userId; this.configuration = configuration; this.slop = slop;
         }
     }
 

@@ -81,13 +81,13 @@ public final class GestureSettingsActivity extends Activity {
 
         LinearLayout navigation = card(content, "底部触碰识屏");
         Switch navigationTap = new Switch(this);
-        navigationTap.setText("触碰底部区域唤起识屏");
+        navigationTap.setText("轻点底部区域唤起识屏");
         navigationTap.setTextSize(17);
         navigationTap.setTextColor(INK);
         navigationTap.setChecked(GestureConfig.navigationTap(this));
         navigationTap.setOnCheckedChangeListener((button, checked) -> GestureConfig.setNavigationTap(this, checked));
         navigation.addView(navigationTap, new LinearLayout.LayoutParams(-1, dp(52)));
-        navigation.addView(text("触碰屏幕底部居中的小范围区域即启动，不需要显示小白条，横屏全屏也可用；同一次触碰只触发一次。从此区域开始上滑也会启动识屏。无需开启长按检测辅助功能，更新后需要重启。", 14, SECONDARY));
+        navigation.addView(text("轻点屏幕底部居中的小范围区域后松手启动，不需要显示小白条，横屏全屏也可用；滑动、多指和长按取消，不触发识屏。无需开启长按检测辅助功能，更新后需要重启。", 14, SECONDARY));
 
         LinearLayout main = card(content, "全屏单指长按");
         enabledSwitch = new Switch(this);
