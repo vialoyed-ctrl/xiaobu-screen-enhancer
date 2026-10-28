@@ -12,11 +12,10 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
-/** Skips entry effects while keeping screenshot capture and recognition callbacks. */
+/** Keeps native startup scan playback and removes waits after recognition completes. */
 final class StartupAnimationHook {
     private static final ThreadLocal<Boolean> enteringFragment = new ThreadLocal<Boolean>();
     private static volatile boolean entering;
-    private static volatile boolean scanReady;
 
     private static boolean fastEntry() {
         return entering;
@@ -25,82 +24,38 @@ final class StartupAnimationHook {
     static void install(ClassLoader loader) {
         installEntryPhase(loader);
         installToolbarScopes(loader);
-        try {
-            Class<?> starter = Class.forName("com.oplus.infocollection.floating.DirectCollectStarter", false, loader);
-            Class<?> info = Class.forName("com.oplus.infocollection.data.CollectionStartInfo", false, loader);
-            final Method show = starter.getDeclaredMethod("l", Activity.class, info);
-            show.setAccessible(true);
-            XposedHelpers.findAndHookMethod(starter.getName(), loader, "k", Activity.class, info,
-                    new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
-                            if (!scanReady) return;
-                            // k waits for the decorative renderer. With that renderer
-                            // skipped, enter its native result transition directly.
-                            show.invoke(hook.thisObject, hook.args[0], hook.args[1]);
-                            hook.setResult(null);
-                        }
-                    });
-        } catch (Throwable error) {
-            XposedBridge.log("XiaobuLauncherHook: result transition hook unavailable: " + error);
-        }
-        try {
-            String collect = "com.oplus.infocollection.floating.CollectAnimator";
+        installDoubleScanSpeed(loader);
+        // Keep native engine initialization, asset loading, screenshot preparation,
+        // scan visibility and animation playback. Only remove completion delays.
+        try (HookTransaction hooks = new HookTransaction()) {
+            Class<?> animator = Class.forName("com.oplus.infocollection.floating.CollectAnimator", false, loader);
             Class<?> function = Class.forName("kotlin.jvm.functions.Function0", false, loader);
-            final Method invoke = function.getMethod("invoke");
-            final Method complete = Class.forName(collect, false, loader).getDeclaredMethod("v", function);
+            final Method complete = animator.getDeclaredMethod("v", function);
+            final Method wait = animator.getDeclaredMethod("w", function);
+            final Method delay = animator.getDeclaredMethod("n", long.class, function);
+            if (complete.getReturnType() != void.class || wait.getReturnType() != void.class
+                    || delay.getReturnType() != void.class) {
+                throw new NoSuchMethodException("Unknown scan completion contract");
+            }
             complete.setAccessible(true);
-            XposedHelpers.findAndHookMethod(collect, loader, "w", function, new XC_MethodHook() {
+            hooks.add(XposedBridge.hookMethod(wait, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
-                    if (!scanReady) return;
-                    // OCR already finished; retain native stop/cleanup and bypass the 1200 ms floor.
+                    // Recognition has finished: stop the scan now, without its 1200ms floor.
                     complete.invoke(hook.thisObject, hook.args[0]);
                     hook.setResult(null);
                     XposedBridge.log("XiaobuLauncherHook: recognition ready, minimum scan wait bypassed");
                 }
-            });
-            XposedHelpers.findAndHookMethod(collect, loader, "n", long.class, function, new XC_MethodHook() {
+            }));
+            hooks.add(XposedBridge.hookMethod(delay, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                    if (scanReady) hook.args[0] = 0L;
+                    // Also remove the native 50ms tail after stopAllAnim().
+                    hook.args[0] = 0L;
                 }
-            });
-            // z() still prepares the captured image and posts the real start callback.
-            // Its fourth argument only makes the temporary scan surface visible.
-            XposedHelpers.findAndHookMethod(collect, loader, "z", "android.content.Context",
-                    "com.oplus.infocollection.data.CollectionStartInfo", function, function,
-                    new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                            if (scanReady) hook.args[3] = null;
-                        }
-                    });
-            for (String name : new String[]{"u", "x"}) {
-                // The native end callback only starts the decorative scan loop.
-                XposedHelpers.findAndHookMethod(collect, loader, name, function, new XC_MethodHook() {
-                    @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
-                        if (!scanReady) return;
-                        final Object callback = hook.args[0];
-                        // Native effect callbacks arrive on a later frame. Keep that
-                        // ordering so capture/task registration finishes first.
-                        if (callback != null) new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
-                            try { invoke.invoke(callback); }
-                            catch (Throwable error) { XposedBridge.log("XiaobuLauncherHook: entry callback failed: " + error); }
-                        });
-                        hook.setResult(null);
-                        XposedBridge.log("XiaobuLauncherHook: startup scan effect skipped");
-                    }
-                });
-            }
-            XposedHelpers.findAndHookMethod("com.oplus.infocollection.view.CollectAnimWindow", loader,
-                    "g", "com.oplus.infocollection.data.CollectionStartInfo", function,
-                    new XC_MethodHook() {
-                        @Override protected void afterHookedMethod(MethodHookParam hook) {
-                            if (scanReady) ((View) hook.thisObject).setAlpha(0f);
-                        }
-                    });
-            scanReady = true;
-            installUnusedScanRenderer(loader);
-            XposedBridge.log("XiaobuLauncherHook: startup scan hooks installed");
+            }));
+            hooks.commit();
+            XposedBridge.log("XiaobuLauncherHook: native startup scan restored; completion wait bypassed");
         } catch (Throwable error) {
-            XposedBridge.log("XiaobuLauncherHook: startup scan hooks unavailable: " + error);
+            XposedBridge.log("XiaobuLauncherHook: native scan completion retained: " + error);
         }
         try {
             String enter = "com.oplus.infocollection.view.anim.g";
@@ -161,80 +116,52 @@ final class StartupAnimationHook {
         }
     }
 
-    private static void installUnusedScanRenderer(ClassLoader loader) {
-        // The scan window is invisible and its animation callbacks are already
-        // replaced above. Starting its GL renderer still stalls the first frame,
-        // particularly over the launcher. Keep native screenshot preparation in t/z.
+    private static void installDoubleScanSpeed(ClassLoader loader) {
         try (HookTransaction hooks = new HookTransaction()) {
-            String collect = "com.oplus.infocollection.floating.CollectAnimator";
-            XC_MethodHook skip = new XC_MethodHook() {
-                @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                    if (scanReady) hook.setResult(null);
-                }
-            };
-            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "G", skip));
-            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "F", "android.content.Context",
-                    "com.oplus.infocollection.data.CollectionStartInfo", skip));
-            hooks.add(XposedHelpers.findAndHookMethod(collect, loader, "j", "android.graphics.Bitmap", skip));
-            hooks.commit();
-            XposedBridge.log("XiaobuLauncherHook: unused scan renderer startup bypassed");
-            installUnusedScanAssets(loader);
-        } catch (Throwable error) {
-            XposedBridge.log("XiaobuLauncherHook: native scan renderer preparation retained: " + error);
-        }
-    }
-
-    private static void installUnusedScanAssets(ClassLoader loader) {
-        try (HookTransaction hooks = new HookTransaction()) {
-            String collect = "com.oplus.infocollection.floating.CollectAnimator";
-            Class<?> animator = Class.forName(collect, false, loader);
-            Class<?> listener = Class.forName(collect + "$b", false, loader);
+            Class<?> collect = Class.forName("com.oplus.infocollection.floating.CollectAnimator", false, loader);
             Class<?> engine = Class.forName("com.oplus.vfxsdk.naive.COEEngine", false, loader);
-            final Field listenerOwner = listener.getDeclaredField("a");
-            final Field animatorEngine = animator.getDeclaredField("b");
-            final Method assetLoad = engine.getMethod("load", String.class, boolean.class, boolean.class);
-            if (listenerOwner.getType() != animator || animatorEngine.getType() != engine
-                    || listener.getDeclaredMethod("onInit").getReturnType() != void.class
-                    || assetLoad.getReturnType() != void.class) {
-                throw new NoSuchMethodException("Unknown scan asset initialization contract");
+            final Field ownedEngine = collect.getDeclaredField("b");
+            final Method getAnimator = engine.getMethod("getAnimator", String.class);
+            final Method setSpeed = getAnimator.getReturnType().getMethod("setSpeed", float.class);
+            final Method play = engine.getMethod("playAnim", String.class);
+            if (ownedEngine.getType() != engine || setSpeed.getReturnType() != void.class) {
+                throw new NoSuchMethodException("Unknown scan playback contract");
             }
-            listenerOwner.setAccessible(true);
-            animatorEngine.setAccessible(true);
-            final ThreadLocal<Object> initializingEngine = new ThreadLocal<Object>();
-            hooks.add(XposedHelpers.findAndHookMethod(listener, "onInit", new XC_MethodHook() {
-                @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                    hook.setObjectExtra("xiaobu.previousScanEngine", initializingEngine.get());
-                    initializingEngine.remove();
-                    if (!scanReady) return;
-                    try {
-                        Object owner = listenerOwner.get(hook.thisObject);
-                        if (owner != null) initializingEngine.set(animatorEngine.get(owner));
-                    } catch (Throwable error) {
-                        XposedBridge.log("XiaobuLauncherHook: native scan asset initialization retained: " + error);
-                    }
+            ownedEngine.setAccessible(true);
+            final ThreadLocal<Object> scanEngine = new ThreadLocal<Object>();
+            XC_MethodHook scope = new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
+                    hook.setObjectExtra("xiaobu.previousSpeedEngine", scanEngine.get());
+                    scanEngine.set(ownedEngine.get(hook.thisObject));
                 }
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
-                    Object previous = hook.getObjectExtra("xiaobu.previousScanEngine");
-                    if (previous == null) initializingEngine.remove();
-                    else initializingEngine.set(previous);
+                    Object previous = hook.getObjectExtra("xiaobu.previousSpeedEngine");
+                    if (previous == null) scanEngine.remove();
+                    else scanEngine.set(previous);
+                }
+            };
+            Class<?> function = Class.forName("kotlin.jvm.functions.Function0", false, loader);
+            hooks.add(XposedHelpers.findAndHookMethod(collect, "u", function, scope));
+            hooks.add(XposedHelpers.findAndHookMethod(collect, "x", function, scope));
+            hooks.add(XposedHelpers.findAndHookMethod(collect, "y", scope));
+            hooks.add(XposedBridge.hookMethod(play, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam hook) {
+                    if (scanEngine.get() != hook.thisObject) return;
+                    String name = (String) hook.args[0];
+                    if (!"Start".equals(name) && !"SelectStart".equals(name) && !"Loop".equals(name)) return;
+                    try {
+                        Object animation = getAnimator.invoke(hook.thisObject, name);
+                        // Native 17.5.14 uses 0.6 for SelectStart and 1.0 for Start/Loop.
+                        // Set absolute speeds each play, so repeated scans do not compound.
+                        if (animation != null) setSpeed.invoke(animation, "SelectStart".equals(name) ? 1.2f : 2.0f);
+                    } catch (Throwable error) {
+                        XposedBridge.log("XiaobuLauncherHook: native scan speed retained: " + error);
+                    }
                 }
             }));
-            // onInit still sets native readiness and delivers its pending callback.
-            // Only its decorative asset load is skipped, on this exact engine.
-            hooks.add(XposedHelpers.findAndHookMethod(assetLoad.getDeclaringClass(), "load", String.class,
-                    boolean.class, boolean.class, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam hook) {
-                            if (scanReady && initializingEngine.get() == hook.thisObject
-                                    && "AIScreenRecognition.coz".equals(hook.args[0])) {
-                                hook.setResult(null);
-                                XposedBridge.log("XiaobuLauncherHook: unused scan assets skipped");
-                            }
-                        }
-                    }));
             hooks.commit();
-            XposedBridge.log("XiaobuLauncherHook: scoped scan asset initialization installed");
         } catch (Throwable error) {
-            XposedBridge.log("XiaobuLauncherHook: native scan asset loading retained: " + error);
+            XposedBridge.log("XiaobuLauncherHook: scan speed hook unavailable: " + error);
         }
     }
 
