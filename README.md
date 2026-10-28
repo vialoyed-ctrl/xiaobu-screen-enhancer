@@ -2,8 +2,6 @@
 
 适用于 ColorOS 的 LSPosed 模块，扩展小布识屏和屏幕翻译的可用页面，提供识图、保存截图和快速启动，并支持可选的全屏单指长按。
 
-[下载 v2.1.3 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.1.3/XiaobuScreenEnhancer-v2.1.3.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.1.3)
-
 ## v2.1.4 本地动画调整
 
 恢复原生启动扫描动画，包括渲染器、扫描资源和窗口显示，并将启动和循环扫描动画设为原生播放速度的两倍。识别完成时立即停止动画，取消 1200 毫秒最低播放等待及结束后的 50 毫秒延时；云端预等待和规则缓存优化继续保留。恢复动画所需的原生初始化也随之恢复，实际首启耗时需实机复测，不能直接套用下方 v2.1.3 的数据。本版已通过构建与自动回归测试，当前手机未连接，尚未覆盖安装或进行实机动画验证。
