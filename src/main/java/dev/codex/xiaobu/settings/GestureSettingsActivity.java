@@ -79,15 +79,15 @@ public final class GestureSettingsActivity extends Activity {
         subtitle.setPadding(0, dp(8), 0, dp(20));
         content.addView(subtitle);
 
-        LinearLayout navigation = card(content, "小白条快捷识屏");
+        LinearLayout navigation = card(content, "底部触碰识屏");
         Switch navigationTap = new Switch(this);
-        navigationTap.setText("单击小白条唤起识屏");
+        navigationTap.setText("触碰底部区域唤起识屏");
         navigationTap.setTextSize(17);
         navigationTap.setTextColor(INK);
         navigationTap.setChecked(GestureConfig.navigationTap(this));
         navigationTap.setOnCheckedChangeListener((button, checked) -> GestureConfig.setNavigationTap(this, checked));
         navigation.addView(navigationTap, new LinearLayout.LayoutParams(-1, dp(52)));
-        navigation.addView(text("只响应手势导航条中间的一次短按；滑动、多指和长按均取消。无需开启长按检测辅助功能，首次更新后需要重启。", 14, SECONDARY));
+        navigation.addView(text("触碰屏幕底部居中的小范围区域即启动，不需要显示小白条，横屏全屏也可用；同一次触碰只触发一次。从此区域开始上滑也会启动识屏。无需开启长按检测辅助功能，更新后需要重启。", 14, SECONDARY));
 
         LinearLayout main = card(content, "全屏单指长按");
         enabledSwitch = new Switch(this);

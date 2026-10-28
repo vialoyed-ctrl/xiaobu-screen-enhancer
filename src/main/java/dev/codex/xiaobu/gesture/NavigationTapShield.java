@@ -8,7 +8,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
-/** Owns handle touches before apps see DOWN. System gesture monitors still receive them. */
+/** Independent bottom touch surface, including when navigation UI is hidden. */
 final class NavigationTapShield {
     private final WindowManager windows;
     private final View view;
@@ -31,7 +31,9 @@ final class NavigationTapShield {
         if (target == null) { remove(); return; }
         if (attached && bounds.equals(target)) return;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                target.width(), target.height(), 2024 /* TYPE_NAVIGATION_BAR_PANEL */,
+                // system_server owns this system window. It does not belong to the
+                // navigation bar, so immersive navigation visibility cannot hide it.
+                target.width(), target.height(), 2010 /* TYPE_SYSTEM_ERROR */,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
