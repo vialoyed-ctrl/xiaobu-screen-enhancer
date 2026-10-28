@@ -18,7 +18,7 @@ $env:XIAOBU_KEY_PASSWORD = '<私钥密码>'
   -Keystore /private/module.keystore -KeyAlias xiaobu
 ```
 
-输出 `XiaobuScreenEnhancer-v2.1.2.apk`。编译临时目录在 `build/`，已被 Git 忽略。`compile-stubs/` 中的隐藏 Android 类型只参与 Java 编译，不打包进 DEX；Xposed API 同样不随 APK 分发。构建会检查各工具退出码并验证 APK 签名。
+输出 `XiaobuScreenEnhancer-v2.1.3.apk`。编译临时目录在 `build/`，已被 Git 忽略。`compile-stubs/` 中的隐藏 Android 类型只参与 Java 编译，不打包进 DEX；Xposed API 同样不随 APK 分发。构建会检查各工具退出码并验证 APK 签名。
 
 ## 状态测试
 

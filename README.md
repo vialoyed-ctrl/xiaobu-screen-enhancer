@@ -2,7 +2,13 @@
 
 适用于 ColorOS 的 LSPosed 模块，扩展小布识屏和屏幕翻译的可用页面，提供识图、保存截图和快速启动，并支持可选的全屏单指长按。
 
-[下载 v2.1.2 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.1.2/XiaobuScreenEnhancer-v2.1.2.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.1.2)
+[下载 v2.1.3 APK](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/download/v2.1.3/XiaobuScreenEnhancer-v2.1.3.apk) · [查看发布说明](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/tag/v2.1.3)
+
+## v2.1.3 性能优化
+
+v2.1.3 进一步取消桌面识屏前的 150 毫秒云端等待，跳过已关闭扫描效果的资源加载，并对服务器明确返回“无匹配”的动态图片规则缓存 60 秒。详细耗时日志默认关闭。
+
+在同一复杂双栏图文页上，从导航触发到原生识别就绪的中位耗时，进程冷启动由 **1785 → 1551 毫秒**，连续识别由 **1375 → 1240 毫秒**。首次未命中规则缓存仍有波动，不保证每次冷启动更快。测量口径、全部样本和限制见 [性能测试记录](PERFORMANCE.md)。
 
 ## 功能
 

@@ -20,3 +20,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Word selection drag test failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Selected text test compilation failed' }
 & java -cp $testClasses dev.codex.xiaobu.SelectedTextTest
 if ($LASTEXITCODE -ne 0) { throw 'Single-line copy test failed' }
+& javac -encoding UTF-8 -d $testClasses (Join-Path $production 'RuleMissCache.java') (Join-Path $PSScriptRoot 'tests/dev/codex/xiaobu/RuleMissCacheTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Rule miss cache test compilation failed' }
+& java -cp $testClasses dev.codex.xiaobu.RuleMissCacheTest
+if ($LASTEXITCODE -ne 0) { throw 'Rule miss cache test failed' }
