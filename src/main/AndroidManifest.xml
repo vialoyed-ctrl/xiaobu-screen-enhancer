@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="27"
-    android:versionName="2.1.6">
+    android:versionCode="29"
+    android:versionName="2.1.8">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />

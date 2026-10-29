@@ -31,9 +31,10 @@ final class NavigationTapShield {
         if (target == null) { remove(); return; }
         if (attached && bounds.equals(target)) return;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                // system_server owns this system window. It does not belong to the
-                // navigation bar, so immersive navigation visibility cannot hide it.
-                target.width(), target.height(), 2010 /* TYPE_SYSTEM_ERROR */,
+                // Independent system_server window, not the navigation bar itself.
+                // TYPE_SYSTEM_ERROR suppresses lower windows' brightness overrides.
+                // A navigation panel stays above applications without that policy.
+                target.width(), target.height(), 2024 /* TYPE_NAVIGATION_BAR_PANEL */,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -41,6 +42,8 @@ final class NavigationTapShield {
         params.gravity = Gravity.TOP | Gravity.LEFT;
         params.x = target.left;
         params.y = target.top;
+        params.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        params.buttonBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
         params.setTitle("XiaobuNavigationTapShield");
         params.layoutInDisplayCutoutMode = 3 /* ALWAYS */;
         try {

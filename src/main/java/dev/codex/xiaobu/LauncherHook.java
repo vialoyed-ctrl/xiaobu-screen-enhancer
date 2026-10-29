@@ -27,6 +27,7 @@ public final class LauncherHook implements IXposedHookLoadPackage {
         StartupAnimationHook.install(params.classLoader);
         NetworkOcrHook.install(params.classLoader);
         RecognitionRuleCacheHook.install(params.classLoader);
+        VisibleImageHook.install(params.classLoader);
         try {
             XposedHelpers.findAndHookMethod(
                     "com.oplus.infocollection.common.a",
