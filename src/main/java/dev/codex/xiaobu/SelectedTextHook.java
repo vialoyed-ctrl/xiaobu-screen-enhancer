@@ -28,7 +28,9 @@ final class SelectedTextHook {
         for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
             String name = frame.getClassName();
             if (name.startsWith("com.oplus.supertext.") || name.startsWith("com.coloros.participle.")
-                    || name.startsWith("com.newui.tool.")) return true;
+                    || name.startsWith("com.newui.tool.")
+                    // 17.7.8 DeepLinkUtils clipboard runnable, renamed by R8.
+                    || (name.equals("b21") && frame.getMethodName().equals("run"))) return true;
         }
         return false;
     }

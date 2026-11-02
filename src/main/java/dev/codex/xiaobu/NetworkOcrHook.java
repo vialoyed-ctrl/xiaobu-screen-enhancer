@@ -8,12 +8,26 @@ import de.robv.android.xposed.XposedHelpers;
 final class NetworkOcrHook {
     static void install(ClassLoader loader) {
         try {
-            String observer = "com.oplus.aiunit.ocr.client.schedule.CloudResultObserver";
-            Class<?> type = Class.forName(observer, false, loader);
-            if (type.getDeclaredMethod("c", long.class).getReturnType() != void.class) {
+            String observer;
+            String waitMethod;
+            Class<?> type;
+            try {
+                observer = "com.oplus.aiunit.ocr.client.schedule.CloudResultObserver";
+                type = Class.forName(observer, false, loader);
+                waitMethod = "c";
+            } catch (ClassNotFoundException renamed) {
+                observer = "com.oplus.aiunit.ocr.client.schedule.a";
+                type = Class.forName(observer, false, loader);
+                waitMethod = "b";
+                // 17.7.8: b(J)V still awaits this latch in SECONDS and clears it.
+                if (type.getDeclaredField("a").getType() != java.util.concurrent.CountDownLatch.class) {
+                    throw new NoSuchFieldException("Unknown cloud observer latch");
+                }
+            }
+            if (type.getDeclaredMethod(waitMethod, long.class).getReturnType() != void.class) {
                 throw new NoSuchMethodException("Unknown cloud wait implementation");
             }
-            XposedHelpers.findAndHookMethod(observer, loader, "c", long.class, new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod(observer, loader, waitMethod, long.class, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
                     // Native c() uses CountDownLatch.await(timeout, SECONDS).
                     // Zero means an immediate poll, so the existing local path starts next.

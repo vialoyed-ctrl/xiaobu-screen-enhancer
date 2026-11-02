@@ -15,6 +15,18 @@ final class RecognitionTimingHook {
         // Read once per process, so normal recognition has no property/logging overhead.
         // Enable with: adb shell setprop debug.xiaobu.perf 1, then restart the host app.
         if (!enabled()) return;
+        if (hasClass(loader, "com.oplus.aiunit.ocr.client.schedule.a")
+                && !hasClass(loader, "com.oplus.aiunit.ocr.client.schedule.CloudResultObserver")) {
+            // Verified 17.7.8 entry, renderer setup, cloud wait, rule preflight and result entry.
+            hook(loader, "com.coloros.colordirectservice.identify.entrance.c", "d", "g");
+            hook(loader, "com.oplus.infocollection.floating.a", "a", "d");
+            hook(loader, "bk0", "d", "e", "f");
+            hook(loader, "com.oplus.aiunit.ocr.client.schedule.a", "b");
+            hook(loader, "com.coloros.colordirectservice.repository.scenerule.c", "a", "d");
+            hook(loader, "com.coloros.directui.ui.CollectionInfoFragment", "h");
+            XposedBridge.log(PREFIX + "17.7.8 enabled; intervals cover synchronous calls only");
+            return;
+        }
         hook(loader, "com.coloros.colordirectservice.identify.entrance.DirectEntranceHandler", "o", "n");
         hook(loader, "com.coloros.directui.identifymusic.card.MusicCardTool", "j", "k");
         hook(loader, "com.coloros.colordirectservice.identify.FavoriteExtractManager", "d");
@@ -28,6 +40,11 @@ final class RecognitionTimingHook {
         hook(loader, "com.oplus.aiunit.ocr.client.schedule.WrapOcrScheduleCallback", "onLocal", "onOcr", "onSchedule");
         hook(loader, "com.coloros.directui.ui.CollectionInfoFragment", "D");
         XposedBridge.log(PREFIX + "enabled; intervals cover synchronous calls only");
+    }
+
+    private static boolean hasClass(ClassLoader loader, String name) {
+        try { Class.forName(name, false, loader); return true; }
+        catch (Throwable unavailable) { return false; }
     }
 
     private static boolean enabled() {

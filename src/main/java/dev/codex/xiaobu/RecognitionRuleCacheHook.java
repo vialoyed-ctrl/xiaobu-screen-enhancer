@@ -25,14 +25,51 @@ final class RecognitionRuleCacheHook {
 
     static void install(ClassLoader loader) {
         try (HookTransaction hooks = new HookTransaction()) {
-            Class<?> source = Class.forName(
-                    "com.coloros.colordirectservice.repository.scenerule.QueryRuleExtDataSource", false, loader);
+            Class<?> source;
+            boolean renamed;
+            try {
+                source = Class.forName("com.coloros.colordirectservice.repository.scenerule.QueryRuleExtDataSource", false, loader);
+                renamed = false;
+            } catch (ClassNotFoundException oldNameMissing) {
+                source = Class.forName("com.coloros.colordirectservice.repository.scenerule.c", false, loader);
+                renamed = true;
+            }
+            final boolean modern = renamed;
             Class<?> continuation = Class.forName("kotlin.coroutines.Continuation", false, loader);
             Class<?> response = Class.forName("com.coloros.commons.repository.net.ResponseBean", false, loader);
             Class<?> unit = Class.forName("kotlin.Unit", false, loader);
-            final Method ensure = source.getDeclaredMethod("d", String.class, String.class, continuation);
-            final Method local = source.getDeclaredMethod("e", String.class, String.class);
-            final Method onResponse = source.getDeclaredMethod("g", String.class, String.class, response);
+            final Method ensure = source.getDeclaredMethod(modern ? "a" : "d", String.class, String.class,
+                    modern ? Class.forName("kotlin.coroutines.jvm.internal.ContinuationImpl", false, loader) : continuation);
+            final Method local = source.getDeclaredMethod(modern ? "b" : "e", String.class, String.class);
+            final Method onResponse;
+            final Field packageField;
+            final Field activityField;
+            final Method body;
+            final Method successful;
+            if (modern) {
+                // 17.7.8 inlined response handling into the Retrofit callback.
+                Class<?> callback = Class.forName("r00", false, loader);
+                Class<?> httpResponse = Class.forName("retrofit2.Response", false, loader);
+                onResponse = callback.getDeclaredMethod("onResponse",
+                        Class.forName("retrofit2.Call", false, loader), httpResponse);
+                packageField = callback.getDeclaredField("a");
+                activityField = callback.getDeclaredField("b");
+                body = httpResponse.getDeclaredMethod("body");
+                successful = httpResponse.getDeclaredMethod("isSuccessful");
+                if (packageField.getType() != Object.class || activityField.getType() != Object.class
+                        || body.getReturnType() != Object.class || successful.getReturnType() != boolean.class
+                        || !Modifier.isStatic(local.getModifiers())) {
+                    throw new NoSuchMethodException("Unknown 17.7.8 rule callback contract");
+                }
+                packageField.setAccessible(true);
+                activityField.setAccessible(true);
+            } else {
+                onResponse = source.getDeclaredMethod("g", String.class, String.class, response);
+                packageField = null;
+                activityField = null;
+                body = null;
+                successful = null;
+            }
             final Method getCode = response.getDeclaredMethod("getCode");
             Field semaphore = source.getDeclaredField("b");
             Field latch = source.getDeclaredField("c");
@@ -56,13 +93,30 @@ final class RecognitionRuleCacheHook {
             final boolean diagnostic = diagnosticEnabled();
             hooks.add(XposedBridge.hookMethod(onResponse, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
-                    if (hook.hasThrowable() || hook.args[2] == null) return;
+                    if (hook.hasThrowable()) return;
                     try {
-                        int code = (Integer) getCode.invoke(hook.args[2]);
+                        Object result;
+                        String packageName;
+                        String activityName;
+                        if (modern) {
+                            // r00 is shared by R8: only its rule branch captures two Strings.
+                            Object packageValue = packageField.get(hook.thisObject);
+                            Object activityValue = activityField.get(hook.thisObject);
+                            if (!(packageValue instanceof String) || !(activityValue instanceof String)
+                                    || hook.args[1] == null
+                                    || !Boolean.TRUE.equals(successful.invoke(hook.args[1]))) return;
+                            packageName = (String) packageValue;
+                            activityName = (String) activityValue;
+                            result = body.invoke(hook.args[1]);
+                        } else {
+                            packageName = (String) hook.args[0];
+                            activityName = (String) hook.args[1];
+                            result = hook.args[2];
+                        }
+                        if (!response.isInstance(result)) return;
+                        int code = (Integer) getCode.invoke(result);
                         if (code != 200 && code != RuleMissCache.NO_MATCH) return;
                         long nowMs = System.currentTimeMillis();
-                        String packageName = (String) hook.args[0];
-                        String activityName = (String) hook.args[1];
                         boolean knownMiss = misses.contains(packageName, activityName, nowMs);
                         misses.response(packageName, activityName, code, nowMs);
                         persistence.changed();

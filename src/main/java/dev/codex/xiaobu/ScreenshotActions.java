@@ -129,7 +129,7 @@ final class ScreenshotActions {
                                 closeRecognition(current, ui);
                                 MAIN.postDelayed(() -> {
                                     // A newer recognition must not be interrupted by an older save.
-                                    if (!binding.isCurrent()) return;
+                                    if (!binding.isHandoffCurrent()) return;
                                     launch(app, engine, uri, intent);
                                 }, 320);
                             });

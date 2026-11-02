@@ -38,7 +38,7 @@ final class ScreenshotButtons {
         try {
             final NativeUi ui = new NativeUi(loader);
             // These callbacks are inert until every required hook below is installed.
-            XposedHelpers.findAndHookMethod(ui.alert.getName(), loader, "a", int.class, View.class,
+            XposedHelpers.findAndHookMethod(ui.alert.getName(), loader, ui.clickName, int.class, View.class,
                     new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam hook) {
                             if (!ready) return;
@@ -65,8 +65,7 @@ final class ScreenshotButtons {
                             } catch (Throwable error) { log("screenshot action failed", error); }
                         }
                     });
-            XposedHelpers.findAndHookMethod(ui.capture.getName(), loader, "c", Context.class,
-                    String.class, Rect.class, boolean.class, new XC_MethodHook() {
+            XposedBridge.hookMethod(ui.captureMethod, new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam hook) {
                             if (!ready) return;
                             ArrayDeque<Long> stack = captures.get();
@@ -105,7 +104,7 @@ final class ScreenshotButtons {
                     } catch (Throwable error) { log("screenshot UI release failed", error); }
                 }
             }).isEmpty()) throw new NoSuchMethodException("Missing recognition activity teardown");
-            XposedHelpers.findAndHookMethod(ui.alert.getName(), loader, "Z", List.class, boolean.class,
+            XposedHelpers.findAndHookMethod(ui.alert.getName(), loader, ui.refreshName, List.class, boolean.class,
                     new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam hook) {
                             if (!ready || !(hook.args[0] instanceof List)) return;
@@ -172,6 +171,11 @@ final class ScreenshotButtons {
         boolean isCurrent() {
             return !closed && CAPTURES.isGeneration(recognitionGeneration) && session.isGeneration(generation);
         }
+        boolean isHandoffCurrent() {
+            // A saved URI remains usable after our own recognition-window teardown.
+            // A subsequent capture still invalidates a delayed external handoff.
+            return CAPTURES.isGeneration(recognitionGeneration) && session.isGeneration(generation);
+        }
     }
 
     static Binding selectedImage(View menu, Bitmap source) {
@@ -192,6 +196,9 @@ final class ScreenshotButtons {
         final Class<?> alert;
         final Class<?> activity;
         final Class<?> capture;
+        final Method captureMethod;
+        final String clickName;
+        final String refreshName;
         final Field cards;
         final Constructor<?> card;
         final Method category;
@@ -203,7 +210,8 @@ final class ScreenshotButtons {
         final Constructor<?> popupItem;
         final Class<?> function;
         final Method popupItems;
-        final Method popupCallback;
+        final CallbackSetter popupCallback;
+        final Method popupDismiss;
         final Method popupShow;
         final Method popupShowing;
         final Object unit;
@@ -212,18 +220,30 @@ final class ScreenshotButtons {
             this.loader = loader;
             alert = Class.forName("com.coloros.directui.ui.DirectCardAlert", false, loader);
             activity = Class.forName("com.coloros.directui.ui.CollectInfoActivity", false, loader);
-            capture = Class.forName("com.oplus.infocollection.collection.common.b", false, loader);
-            if (capture.getDeclaredMethod("c", Context.class, String.class, Rect.class, boolean.class)
-                    .getReturnType() != Bitmap.class) throw new NoSuchMethodException("Unknown capture contract");
-            cards = alert.getField("n");
+            // These are two complete, APK-validated R8 layouts. Do not mix members
+            // from different releases or guess by broad method-shape matching.
+            boolean modern;
+            try { alert.getDeclaredMethod("j", int.class, View.class); modern = true; }
+            catch (NoSuchMethodException legacy) { modern = false; }
+            clickName = modern ? "j" : "a";
+            refreshName = modern ? "v" : "Z";
+            capture = Class.forName(modern ? "wb0" : "com.oplus.infocollection.collection.common.b", false, loader);
+            captureMethod = modern
+                    ? capture.getDeclaredMethod("a", Context.class, String.class, Rect.class, boolean.class, int.class)
+                    : capture.getDeclaredMethod("c", Context.class, String.class, Rect.class, boolean.class);
+            if (captureMethod.getReturnType() != Bitmap.class
+                    || !java.lang.reflect.Modifier.isStatic(captureMethod.getModifiers()))
+                throw new NoSuchMethodException("Unknown capture contract");
+            cards = alert.getDeclaredField(modern ? "o" : "n");
+            cards.setAccessible(true);
             if (!List.class.isAssignableFrom(cards.getType())) throw new NoSuchFieldException("Unknown card list");
             alert.getDeclaredConstructor(Context.class, android.view.ViewGroup.class,
                     Class.forName("com.coloros.directui.business.beans.DirectIntentData", false, loader),
                     List.class, Drawable.class);
-            alert.getDeclaredMethod("Z", List.class, boolean.class);
-            alert.getDeclaredMethod("a", int.class, View.class);
+            alert.getDeclaredMethod(refreshName, List.class, boolean.class);
+            alert.getDeclaredMethod(clickName, int.class, View.class);
             activity.getDeclaredMethod("onDestroy");
-            dismiss = alert.getMethod("I");
+            dismiss = alert.getMethod(modern ? "p" : "I");
             Class<?> type = Class.forName("com.coloros.directui.business.beans.CardUIInfo", false, loader);
             card = type.getConstructor(String.class, Drawable.class,
                     Class.forName("com.coloros.directui.business.beans.Category", false, loader),
@@ -233,15 +253,19 @@ final class ScreenshotButtons {
             category = type.getMethod("getCategory");
             cardType = type.getMethod("getCardType");
             icon = type.getMethod("getIcon");
-            Class<?> popupType = Class.forName("com.coloros.directui.ui.panel.FloatPopupList", false, loader);
+            Class<?> popupType = Class.forName(modern ? "dw1" : "com.coloros.directui.ui.panel.FloatPopupList", false, loader);
             popup = popupType.getConstructor(Context.class);
-            popupItem = Class.forName("com.coloros.directui.ui.panel.FloatPopupList$b", false, loader)
-                    .getConstructor(String.class, Drawable.class, List.class);
+            popupItem = Class.forName(modern ? "cw1" : "com.coloros.directui.ui.panel.FloatPopupList$b", false, loader)
+                    .getConstructor(String.class, Drawable.class, modern ? ArrayList.class : List.class);
             function = Class.forName("kotlin.jvm.functions.Function3", false, loader);
-            popupItems = popupType.getMethod("p", List.class);
-            popupCallback = popupType.getMethod("q", function);
-            popupShow = popupType.getMethod("t", View.class);
-            popupShowing = popupType.getMethod("n");
+            popupItems = popupType.getMethod(modern ? "f" : "p", modern ? ArrayList.class : List.class);
+            popupCallback = modern ? new CallbackSetter(popupType.getField("a"), null)
+                    : new CallbackSetter(null, popupType.getMethod("q", function));
+            if (modern && popupCallback.field.getType() != function)
+                throw new NoSuchFieldException("Unknown popup callback");
+            popupShow = popupType.getMethod(modern ? "h" : "t", View.class);
+            popupShowing = popupType.getMethod(modern ? "d" : "n");
+            popupDismiss = modern ? popupType.getMethod("a") : null;
             unit = Class.forName("kotlin.Unit", false, loader).getField("INSTANCE").get(null);
         }
 
@@ -274,6 +298,30 @@ final class ScreenshotButtons {
         private Object newCard(String name, Drawable icon, Object template) throws Exception {
             return card.newInstance(name, icon, category.invoke(template), cardType.invoke(template), null,
                     true, true, false, false, true, null, null, false);
+        }
+    }
+
+    /** The new R8 layout exposes the callback as a field instead of a setter. */
+    static final class CallbackSetter {
+        final Field field;
+        final Method method;
+        CallbackSetter(Field field, Method method) { this.field = field; this.method = method; }
+        public void invoke(Object popup, Object callback) throws Exception {
+            if (field != null) field.set(popup, callback);
+            else method.invoke(popup, callback);
+        }
+    }
+
+    static void releaseSelection(View menu, NativeUi ui) {
+        Binding binding = bindings.get(menu);
+        if (binding == null || binding.session == CAPTURES) return;
+        bindings.remove(menu);
+        binding.closed = true;
+        binding.session.endCapture(binding.generation);
+        Object popup = binding.popup.get();
+        if (popup != null && ui.popupDismiss != null) {
+            try { ui.popupDismiss.invoke(popup); }
+            catch (Throwable error) { log("selection popup release failed", error); }
         }
     }
 

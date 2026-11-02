@@ -36,45 +36,55 @@ final class InPlaceWordSelection {
             Contract ui = new Contract(loader);
             Class<?> nativeView = Class.forName("com.oplus.supertext.core.view.supertext.SuperTextView", false, loader);
             Field viewModel = field(nativeView, "d");
-            XposedHelpers.findAndHookMethod(nativeView, "e1", boolean.class, boolean.class, new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod(nativeView, ui.modern ? "D" : "e1", boolean.class, boolean.class, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
                     if (installed && indices.containsKey(viewModel.get(hook.thisObject))) hook.args[0] = false;
                 }
             });
             // Keep native text pixels, backgrounds and geometry. Tint only the native selection paint.
-            Class<?> renderer = Class.forName("com.oplus.supertext.core.view.supertext.SuperTextRender", false, loader);
-            Field rendererModel = field(renderer, "c"), selectionPaint = field(renderer, "l");
+            Class<?> renderer = Class.forName(ui.modern ? "tc5"
+                    : "com.oplus.supertext.core.view.supertext.SuperTextRender", false, loader);
+            Field rendererModel = field(renderer, ui.modern ? "b" : "c"), selectionPaint = field(renderer, "l");
+            Field viewRenderer = ui.modern ? field(nativeView, "f") : null;
             Map<Object, Integer> paintColors = new WeakHashMap<>();
-            XposedHelpers.findAndHookMethod(renderer, "O", Canvas.class, int.class, int.class, Bitmap.class, new XC_MethodHook() {
+            XC_MethodHook tint = new XC_MethodHook() {
+                private Object renderer(Object owner) throws Exception {
+                    return viewRenderer == null ? owner : viewRenderer.get(owner);
+                }
                 @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
                     if (!installed) return;
-                    Object model = rendererModel.get(hook.thisObject);
+                    Object render = renderer(hook.thisObject);
+                    Object model = rendererModel.get(render);
                     Index index = indices.get(model);
                     if (index == null || !index.ownedSelection || index.data.get() != ui.data.get(model)) return;
-                    Paint paint = (Paint) selectionPaint.get(hook.thisObject);
+                    Paint paint = (Paint) selectionPaint.get(render);
                     paintColors.put(hook.thisObject, paint.getColor());
                     paint.setColor(0x73efb4c9);
                 }
                 @Override protected void afterHookedMethod(MethodHookParam hook) throws Throwable {
                     Integer previous = paintColors.remove(hook.thisObject);
-                    if (previous != null) ((Paint) selectionPaint.get(hook.thisObject)).setColor(previous);
+                    if (previous != null) ((Paint) selectionPaint.get(renderer(hook.thisObject))).setColor(previous);
                 }
-            });
-            XposedHelpers.findAndHookMethod(ui.model, "G0", new XC_MethodHook() {
+            };
+            // 17.7.8 inlines the renderer draw entry point into the view.
+            if (ui.modern) XposedHelpers.findAndHookMethod(nativeView, "onDraw", Canvas.class, tint);
+            else XposedHelpers.findAndHookMethod(renderer, "O", Canvas.class, int.class, int.class, Bitmap.class, tint);
+            XposedHelpers.findAndHookMethod(ui.model, ui.modern ? "l" : "G0", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
                     Index index = indices.get(hook.thisObject);
                     if (index != null && index.ownedSelection) hook.setResult(true);
                 }
             });
-            XposedHelpers.findAndHookMethod(ui.model, "getSelectedText", new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod(ui.model, ui.modern ? "f" : "getSelectedText", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) throws Throwable {
                     Index index = indices.get(hook.thisObject);
                     if (index != null && index.ownedSelection && index.data.get() == ui.data.get(hook.thisObject)
                             && hook.getResult() instanceof String)
-                        hook.setResult(SelectedText.singleLine((String) hook.getResult()));
+                        hook.setResult(ui.modern ? ownedSelectedText(ui, hook.thisObject)
+                                : SelectedText.singleLine((String) hook.getResult()));
                 }
             });
-            XposedHelpers.findAndHookMethod(ui.controller, "a", MotionEvent.class, new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod(ui.controller, ui.modern ? "j" : "a", MotionEvent.class, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) {
                     if (!installed) return;
                     try {
@@ -190,12 +200,18 @@ final class InPlaceWordSelection {
         apply(ui, model, next);
         index.ownedSelection = true;
 
-        ui.cursor.invoke(model, range[0], range[1]);
+        if (ui.modern) {
+            // R8 inlined c0(II), whose complete body sets these two cursor fields.
+            ui.cursorStart.setInt(model, range[0]); ui.cursorEnd.setInt(model, range[1]);
+        } else ui.cursor.invoke(model, range[0], range[1]);
 
         Object view = ui.controllerView.get(controller);
         String selected = (String) ui.selectedText.invoke(model);
         List<?> listeners = (List<?>) ui.listeners.invoke(view);
-        if (listeners != null) for (Object listener : listeners) ui.selectionChanged.invoke(listener, selected);
+        // The 17.7.8 listener text callback was removed by R8 (native call sites
+        // only null-check the listener); do not guess another interface method.
+        if (ui.selectionChanged != null && listeners != null)
+            for (Object listener : listeners) ui.selectionChanged.invoke(listener, selected);
         ui.limitTools.invoke(view, false);
         if (finish) {
             if (selected == null || selected.isEmpty()) ui.hideTools.invoke(view, false);
@@ -205,6 +221,19 @@ final class InPlaceWordSelection {
         int count = 0; for (boolean value : next) if (value) count++;
         if (finish) XposedBridge.log("XiaobuLauncherHook: in-place word selection range=" + range[0] + ".." + range[1]
                 + " selected=" + count + " textLength=" + (selected == null ? 0 : selected.length()));
+    }
+
+    private static String ownedSelectedText(Contract ui, Object model) throws Exception {
+        Object state = ui.data.get(model);
+        boolean[] selected = (boolean[]) ui.mask.invoke(state);
+        String[] text = new String[selected.length];
+        for (int i = 0; i < selected.length; i++) {
+            if (!selected[i]) continue;
+            Object point = ui.pointByIndex.invoke(state, i);
+            if (point == null || Boolean.TRUE.equals(ui.imagePoint.invoke(point))) continue;
+            text[i] = (String) ui.pointText.invoke(point);
+        }
+        return MaskSelectedText.collect(selected, text);
     }
 
     private static void apply(Contract ui, Object model, boolean[] selection) throws Exception {
@@ -295,18 +324,29 @@ final class InPlaceWordSelection {
     }
     private static final class Contract {
         final Class<?> model, controller;
+        final boolean modern;
+        final Field cursorStart, cursorEnd;
 
         final Field controllerModel, controllerView, downPoint, data, top, bottom, combined;
         final Method minX, minY, maxX, maxY;
+        final Method pointByIndex;
         final Method lines, points, imageLine, imagePoint, pointText, pointIndex, mask, rebuild, antPath;
         final Method isImage, cursor, selectedText, listeners, selectionChanged, invalidate, hitTest, toModel, updateHandles, limitTools, hideTools;
         Contract(ClassLoader loader) throws Exception {
-            model = Class.forName("com.oplus.supertext.core.view.supertext.SuperTextModel", false, loader);
-            controller = Class.forName("com.oplus.supertext.core.view.supertext.c0", false, loader);
+            Class<?> resolvedModel;
+            try { resolvedModel = Class.forName("com.oplus.supertext.core.view.supertext.SuperTextModel", false, loader); }
+            catch (ClassNotFoundException renamed) {
+                resolvedModel = Class.forName("com.oplus.supertext.core.view.supertext.b", false, loader);
+            }
+            model = resolvedModel;
+            modern = model.getName().equals("com.oplus.supertext.core.view.supertext.b");
+            cursorStart = modern ? field(model, "i") : null;
+            cursorEnd = modern ? field(model, "j") : null;
+            controller = Class.forName(modern ? "ob5" : "com.oplus.supertext.core.view.supertext.c0", false, loader);
             Class<?> state = Class.forName("com.oplus.supertext.core.data.SuperTextData", false, loader);
             Class<?> line = Class.forName("com.oplus.supertext.core.data.LineTextData", false, loader);
             Class<?> point = Class.forName("com.oplus.supertext.core.data.TextPointData", false, loader);
-            Class<?> view = Class.forName("com.oplus.supertext.core.view.supertext.w", false, loader);
+            Class<?> view = Class.forName(modern ? "lb5" : "com.oplus.supertext.core.view.supertext.w", false, loader);
 
             controllerModel = field(controller, "b"); controllerView = field(controller, "c"); downPoint = field(controller, "g");
             data = field(model, "h"); top = field(state, "mTextSwipedMaskTop"); bottom = field(state, "mTextSwipedMaskBottom");
@@ -317,20 +357,21 @@ final class InPlaceWordSelection {
             lines = state.getMethod("getOriginalData"); points = line.getMethod("getTextPointDataList");
             imageLine = line.getMethod("isImageMark"); imagePoint = point.getMethod("isImageMark");
             pointText = point.getMethod("getText"); pointIndex = point.getMethod("getTextIndex");
+            pointByIndex = state.getMethod("getTextPointDataByIndex", int.class);
             mask = state.getMethod("getSwipedMask"); rebuild = method(state, "updateSwipedArea", boolean.class, boolean.class);
             antPath = method(state, "buildAntPath");
-            isImage = model.getMethod("b0", int.class);
-            hitTest = model.getMethod("M", PointF.class, boolean.class); toModel = model.getMethod("a0", PointF.class);
+            isImage = model.getMethod(modern ? "j" : "b0", int.class);
+            hitTest = model.getMethod(modern ? "v" : "M", PointF.class, boolean.class); toModel = model.getMethod(modern ? "i" : "a0", PointF.class);
 
-            updateHandles = model.getMethod("q");
+            updateHandles = model.getMethod(modern ? "s" : "q");
             limitTools = Class.forName("com.oplus.supertext.core.view.supertext.SuperTextView", false, loader)
                     .getMethod("setLimitTextToolShow", boolean.class);
-            cursor = model.getMethod("c0", int.class, int.class); selectedText = model.getMethod("getSelectedText");
+            cursor = modern ? null : model.getMethod("c0", int.class, int.class); selectedText = model.getMethod(modern ? "f" : "getSelectedText");
 
             listeners = view.getMethod("getSuperTextEventListeners");
-            selectionChanged = Class.forName("lm.a", false, loader).getMethod("f", String.class);
-            invalidate = view.getMethod("t");
-            hideTools = view.getMethod("b", boolean.class);
+            selectionChanged = modern ? null : Class.forName("lm.a", false, loader).getMethod("f", String.class);
+            invalidate = modern ? View.class.getMethod("invalidate") : view.getMethod("t");
+            hideTools = view.getMethod(modern ? "a" : "b", boolean.class);
         }
     }
 }

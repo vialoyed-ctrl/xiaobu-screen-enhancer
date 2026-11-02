@@ -28,6 +28,7 @@ public final class LauncherHook implements IXposedHookLoadPackage {
         NetworkOcrHook.install(params.classLoader);
         RecognitionRuleCacheHook.install(params.classLoader);
         VisibleImageHook.install(params.classLoader);
+        if (!ModernEntryHooks.install(params.classLoader)) {
         try {
             XposedHelpers.findAndHookMethod(
                     "com.oplus.infocollection.common.a",
@@ -77,6 +78,7 @@ public final class LauncherHook implements IXposedHookLoadPackage {
             XposedBridge.log("XiaobuLauncherHook: secure-window precheck hook installed");
         } catch (Throwable error) {
             XposedBridge.log("XiaobuLauncherHook: secure-window precheck hook failed: " + error);
+        }
         }
         try {
             XposedHelpers.findAndHookMethod("com.coloros.directui.business.beans.CardUIInfo",

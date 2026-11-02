@@ -16,6 +16,7 @@ import de.robv.android.xposed.XposedBridge;
 /** Completes native image results using visible view bounds and the same capture. */
 final class VisibleImageHook {
     static void install(ClassLoader loader) {
+        if (ModernVisibleImages.install(loader)) return;
         try (HookTransaction hooks = new HookTransaction()) {
             Class<?> parser = Class.forName("com.oplus.infocollection.collection.core.CollectionParse", false, loader);
             Class<?> info = Class.forName("yi.n", false, loader);
@@ -122,7 +123,7 @@ final class VisibleImageHook {
         } catch (Throwable error) { log(error); }
     }
 
-    private static void add(List<Rect> output, Rect bounds, Bitmap source) {
+    static void add(List<Rect> output, Rect bounds, Bitmap source) {
         // An empty visible bound means fully clipped/covered; never restore its full bounds.
         if (bounds == null || bounds.isEmpty()) return;
         Rect clipped = new Rect(bounds);
@@ -130,7 +131,7 @@ final class VisibleImageHook {
         output.add(clipped);
     }
 
-    private static boolean sameBounds(Rect first, Rect second) {
+    static boolean sameBounds(Rect first, Rect second) {
         if (second == null || second.isEmpty()) return false;
         // Native crops can round or trim a few pixels at the edge of a view.
         int toleranceX = Math.max(2, Math.min(first.width(), second.width()) / 20);

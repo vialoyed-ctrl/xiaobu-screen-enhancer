@@ -24,3 +24,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Single-line copy test failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Rule miss cache test compilation failed' }
 & java -cp $testClasses dev.codex.xiaobu.RuleMissCacheTest
 if ($LASTEXITCODE -ne 0) { throw 'Rule miss cache test failed' }
+& javac -encoding UTF-8 -d $testClasses (Join-Path $production 'SelectedText.java') (Join-Path $production 'MaskSelectedText.java') (Join-Path $PSScriptRoot 'tests/dev/codex/xiaobu/MaskSelectedTextTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Disjoint text test compilation failed' }
+& java -cp $testClasses dev.codex.xiaobu.MaskSelectedTextTest
+if ($LASTEXITCODE -ne 0) { throw 'Disjoint text copy test failed' }

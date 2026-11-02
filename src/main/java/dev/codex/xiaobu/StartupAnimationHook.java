@@ -22,12 +22,19 @@ final class StartupAnimationHook {
     }
 
     static void install(ClassLoader loader) {
-        installEntryPhase(loader);
-        installToolbarScopes(loader);
-        installDoubleScanSpeed(loader);
+        boolean modern = modernScanAvailable(loader);
+        installEntryPhase(loader, modern);
+        if (modern) {
+            ModernScanSpeed.install(loader);
+            install178CompletionDelay(loader);
+            XposedBridge.log("XiaobuLauncherHook: 17.7.8 native renderer/result preparation retained");
+        } else {
+            installToolbarScopes(loader);
+            installDoubleScanSpeed(loader);
+        }
         // Keep native engine initialization, asset loading, screenshot preparation,
         // scan visibility and animation playback. Only remove completion delays.
-        try (HookTransaction hooks = new HookTransaction()) {
+        if (!modern) try (HookTransaction hooks = new HookTransaction()) {
             Class<?> animator = Class.forName("com.oplus.infocollection.floating.CollectAnimator", false, loader);
             Class<?> function = Class.forName("kotlin.jvm.functions.Function0", false, loader);
             final Method complete = animator.getDeclaredMethod("v", function);
@@ -57,7 +64,7 @@ final class StartupAnimationHook {
         } catch (Throwable error) {
             XposedBridge.log("XiaobuLauncherHook: native scan completion retained: " + error);
         }
-        try {
+        if (!modern) try {
             String enter = "com.oplus.infocollection.view.anim.g";
             Class<?> type = Class.forName(enter, false, loader);
             final Field animations = type.getDeclaredField("b");
@@ -75,7 +82,7 @@ final class StartupAnimationHook {
         }
         try {
             XposedHelpers.findAndHookMethod("com.coloros.directui.ui.CollectionInfoFragment", loader,
-                    "D", new XC_MethodHook() {
+                    fragmentEntryMethod(loader), new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam hook) {
                             hook.setObjectExtra("xiaobu.previousEntry", enteringFragment.get());
                             enteringFragment.set(Boolean.TRUE);
@@ -96,8 +103,15 @@ final class StartupAnimationHook {
                             }
                         }
                     });
-            XposedHelpers.findAndHookMethod("com.coloros.directui.ui.CollectInfoActivity", loader,
-                    "initView", new XC_MethodHook() {
+            XposedBridge.log("XiaobuLauncherHook: recognition fragment fast entry installed");
+        } catch (Throwable error) {
+            XposedBridge.log("XiaobuLauncherHook: recognition fragment entry hook unavailable: " + error);
+        }
+        try {
+            Class<?> activityType = Class.forName("com.coloros.directui.ui.CollectInfoActivity", false, loader);
+            Method entry = modern ? activityType.getDeclaredMethod("onCreate", android.os.Bundle.class)
+                    : activityType.getDeclaredMethod("initView");
+            XposedBridge.hookMethod(entry, new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam hook) {
                             Activity activity = (Activity) hook.thisObject;
                             activity.getWindow().setWindowAnimations(0);
@@ -113,6 +127,92 @@ final class StartupAnimationHook {
             XposedBridge.log("XiaobuLauncherHook: recognition activity fast entry installed");
         } catch (Throwable error) {
             XposedBridge.log("XiaobuLauncherHook: recognition activity entry hook unavailable: " + error);
+        }
+    }
+
+
+    private static boolean modernScanAvailable(ClassLoader loader) {
+        try {
+            Class.forName("com.oplus.infocollection.floating.CollectAnimator", false, loader);
+            return false;
+        } catch (ClassNotFoundException renamed) {
+            try { Class.forName("bk0", false, loader); return true; }
+            catch (ClassNotFoundException unavailable) { return false; }
+        }
+    }
+
+    private static String fragmentEntryMethod(ClassLoader loader) throws Exception {
+        Class<?> fragment = Class.forName("com.coloros.directui.ui.CollectionInfoFragment", false, loader);
+        try {
+            if (fragment.getDeclaredMethod("D").getReturnType() == void.class) return "D";
+        } catch (NoSuchMethodException renamed) {
+            // APK 17.7.8 h(): native playEnterAnim, including its final-value listeners.
+            if (fragment.getDeclaredMethod("h").getReturnType() == void.class
+                    && fragment.getDeclaredField("i").getType() == boolean.class
+                    && fragment.getDeclaredField("j").getType() == boolean.class) return "h";
+        }
+        throw new NoSuchMethodException("Unknown fragment entry contract");
+    }
+
+    /** 17.7.8 inlined completion into a shared Runnable; retain every native callback. */
+    private static void install178CompletionDelay(ClassLoader loader) {
+        try {
+            Class.forName("com.oplus.infocollection.floating.CollectAnimator", false, loader);
+            return; // The old callback contract is installed separately above.
+        } catch (ClassNotFoundException renamed) { }
+        try (HookTransaction hooks = new HookTransaction()) {
+            Class<?> task = Class.forName("pp0", false, loader);
+            Class<?> dialog = Class.forName("yw1", false, loader);
+            Class<?> callback = Class.forName("xw1", false, loader);
+            Class<?> animator = Class.forName("bk0", false, loader);
+            Class<?> window = Class.forName("com.oplus.infocollection.view.CollectAnimWindow", false, loader);
+            Class<?> engine = Class.forName("com.oplus.vfxsdk.naive.COEEngine", false, loader);
+            Class<?> scheduler = Class.forName("il5", false, loader);
+            final Class<?> tailTask = Class.forName("ui0", false, loader);
+            final Class<?> completeCallback = Class.forName("vt", false, loader);
+            final Field owner = task.getDeclaredField("b");
+            final Field action = task.getDeclaredField("c");
+            final Field tailAction = tailTask.getDeclaredField("b");
+            Method run = task.getDeclaredMethod("run");
+            Method delay = scheduler.getDeclaredMethod("c", long.class, Runnable.class);
+            if (!Runnable.class.isAssignableFrom(task) || !Runnable.class.isAssignableFrom(tailTask)
+                    || owner.getType() != Object.class || action.getType() != Object.class
+                    || tailAction.getType() != Object.class
+                    || dialog.getDeclaredField("d").getType() != window
+                    || window.getDeclaredField("a").getType() != animator
+                    || animator.getDeclaredField("a").getType() != engine
+                    || animator.getDeclaredField("c").getType() != long.class
+                    || callback.getDeclaredField("b").getType() != dialog
+                    || run.getReturnType() != void.class || delay.getReturnType() != void.class
+                    || !java.lang.reflect.Modifier.isStatic(delay.getModifiers())) {
+                throw new NoSuchMethodException("Unknown 17.7.8 completion contract");
+            }
+            owner.setAccessible(true);
+            action.setAccessible(true);
+            tailAction.setAccessible(true);
+            final ThreadLocal<Boolean> completing = new ThreadLocal<Boolean>();
+            hooks.add(XposedBridge.hookMethod(run, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
+                    hook.setObjectExtra("xiaobu.previousCompletion", completing.get());
+                    completing.set(dialog.isInstance(owner.get(hook.thisObject))
+                            && callback.isInstance(action.get(hook.thisObject)));
+                }
+                @Override protected void afterHookedMethod(MethodHookParam hook) {
+                    Object previous = hook.getObjectExtra("xiaobu.previousCompletion");
+                    if (previous == null) completing.remove();
+                    else completing.set((Boolean) previous);
+                }
+            }));
+            hooks.add(XposedBridge.hookMethod(delay, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam hook) throws Throwable {
+                    if (!Boolean.TRUE.equals(completing.get()) || !tailTask.isInstance(hook.args[1])) return;
+                    if (completeCallback.isInstance(tailAction.get(hook.args[1]))) hook.args[0] = 0L;
+                }
+            }));
+            hooks.commit();
+            XposedBridge.log("XiaobuLauncherHook: 17.7.8 native completion delay shortened; callbacks retained");
+        } catch (Throwable unavailable) {
+            XposedBridge.log("XiaobuLauncherHook: native 17.7.8 completion retained: " + unavailable);
         }
     }
 
@@ -165,18 +265,26 @@ final class StartupAnimationHook {
         }
     }
 
-    private static void installEntryPhase(ClassLoader loader) {
+    private static void installEntryPhase(ClassLoader loader, boolean modern) {
         XC_MethodHook begin = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam hook) {
                 entering = true;
             }
         };
         try {
-            XposedHelpers.findAndHookMethod("com.oplus.infocollection.floating.DirectCollectStarter",
-                    loader, "k", Activity.class,
-                    "com.oplus.infocollection.data.CollectionStartInfo", begin);
+            try {
+                Class.forName("com.oplus.infocollection.floating.DirectCollectStarter", false, loader);
+                XposedHelpers.findAndHookMethod("com.oplus.infocollection.floating.DirectCollectStarter",
+                        loader, "k", Activity.class,
+                        "com.oplus.infocollection.data.CollectionStartInfo", begin);
+            } catch (ClassNotFoundException | NoClassDefFoundError unavailable) {
+                // 17.7.8 moved this entry point to floating.a.d(CollectInfoActivity, info).
+                XposedHelpers.findAndHookMethod("com.oplus.infocollection.floating.a", loader, "d",
+                        "com.coloros.directui.ui.CollectInfoActivity",
+                        "com.oplus.infocollection.data.CollectionStartInfo", begin);
+            }
             Class<?> activity = Class.forName("com.coloros.directui.ui.CollectInfoActivity", false, loader);
-            XposedBridge.hookAllMethods(activity, "initView", begin);
+            XposedBridge.hookAllMethods(activity, modern ? "onCreate" : "initView", begin);
             XposedBridge.hookAllMethods(activity, "onNewIntent", begin);
             XC_MethodHook end = new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam hook) { entering = false; }
@@ -192,6 +300,11 @@ final class StartupAnimationHook {
                             }
                         }
                     });
+            XposedBridge.log("XiaobuLauncherHook: recognition entry lifecycle installed");
+        } catch (Throwable error) {
+            XposedBridge.log("XiaobuLauncherHook: entry lifecycle hooks unavailable: " + error);
+        }
+        if (!modern) try {
             // Remove the stagger between toolbar cards, only during initial presentation.
             XposedHelpers.findAndHookMethod("com.coloros.directui.ui.anim.c", loader, "r", int.class,
                     new XC_MethodHook() {
