@@ -1,10 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.codex.xiaobu.launcherhook"
-    android:versionCode="30"
-    android:versionName="2.1.9">
+    android:versionCode="35"
+    android:versionName="2.2.4">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <application android:label="小布识屏增强" android:hasCode="true"
         android:theme="@style/ModuleSettingsTheme" android:allowBackup="false">
         <meta-data android:name="xposedmodule" android:value="true" />
@@ -15,13 +17,17 @@
             android:label="小布识屏增强" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+        <activity-alias android:name="dev.codex.xiaobu.launcherhook.LauncherEntry"
+            android:targetActivity="dev.codex.xiaobu.settings.GestureSettingsActivity"
+            android:label="小布识屏增强" android:enabled="false" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity android:name="dev.codex.xiaobu.WebSearchActivity" android:exported="true"
             android:label="识图" android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
             android:excludeFromRecents="true" android:configChanges="orientation|screenSize|keyboardHidden" />

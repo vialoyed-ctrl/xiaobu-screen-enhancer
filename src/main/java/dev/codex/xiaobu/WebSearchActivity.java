@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 /** Foreground user initiated upload; uses the module's network identity and browser defaults. */
 public final class WebSearchActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "XiaobuWebUpload"));
-    private boolean destroyed;
+    private volatile boolean destroyed;
     private int engine;
     private Uri image;
     private TextView message;
@@ -32,7 +32,8 @@ public final class WebSearchActivity extends Activity {
         super.onCreate(state);
         engine = getIntent().getIntExtra("engine", -1);
         image = getIntent().getParcelableExtra(Intent.EXTRA_STREAM);
-        if ((engine != 0 && engine != 1) || image == null || !"content".equals(image.getScheme())) { finish(); return; }
+        if ((!WebSearchRoutes.isWeb(engine) && engine != 2) || image == null || !"content".equals(image.getScheme())) { finish(); return; }
+        if (engine != 2) DirectNetwork.install(getApplicationContext());
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setGravity(Gravity.CENTER);
@@ -58,11 +59,16 @@ public final class WebSearchActivity extends Activity {
 
     private void upload() {
         android.util.Log.i("XiaobuWebSearch", "upload.begin engine=" + engine);
-        message.setText("正在使用 " + (engine == 0 ? "Google" : "Yandex") + " 识图…");
+        message.setText(engine == 2 ? "正在打开抖音拍照问…" : "正在使用 " + WebSearchRoutes.name(engine) + " 识图…");
         progress.setVisibility(android.view.View.VISIBLE);
         retry.setVisibility(android.view.View.GONE);
         worker.execute(() -> {
             try {
+                if (engine == 2) {
+                    DouyinImageSearch.open(getApplicationContext(), image);
+                    runOnUiThread(() -> { if (!destroyed) finish(); });
+                    return;
+                }
                 byte[] compressed = searchImage();
                 android.util.Log.i("XiaobuWebSearch", "image.ready engine=" + engine + " bytes=" + compressed.length);
                 String link = WebImageSearch.upload(new ByteArrayInputStream(compressed), engine, host ->
@@ -71,7 +77,8 @@ public final class WebSearchActivity extends Activity {
                 runOnUiThread(() -> { if (!destroyed) { result = link; openResult(); } });
             } catch (Exception error) {
                 android.util.Log.i("XiaobuWebSearch", "upload.error engine=" + engine + " type=" + error.getClass().getSimpleName());
-                String detail = error instanceof java.net.SocketTimeoutException ? "连接超时，请检查网络后重试"
+                String detail = engine == 2 ? "无法打开抖音拍照问，请确认模块已获得 root 权限且抖音版本受支持"
+                        : error instanceof java.net.SocketTimeoutException ? "连接超时，请检查网络后重试"
                         : error instanceof javax.net.ssl.SSLException ? "安全连接失败，请检查网络"
                         : error instanceof java.net.UnknownHostException ? "无法连接识图服务，请检查网络"
                         : "上传失败，请重试（" + error.getClass().getSimpleName() + "）";

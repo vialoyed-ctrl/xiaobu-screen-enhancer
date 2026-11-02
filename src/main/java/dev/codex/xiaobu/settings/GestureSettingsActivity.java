@@ -53,6 +53,7 @@ public final class GestureSettingsActivity extends Activity {
     private static final String BACKEND_BOOT = "xiaobu_single_finger_backend_boot";
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private Switch enabledSwitch;
+    private Switch hideLauncherSwitch;
     private TextView statusText;
     private TextView timeoutSummary;
     private TextView exclusionSummary;
@@ -135,6 +136,22 @@ public final class GestureSettingsActivity extends Activity {
             @Override public void onClick(View view) { showAppChooser(); }
         });
 
+        LinearLayout launcher = card(content, "桌面入口");
+        hideLauncherSwitch = new Switch(this);
+        hideLauncherSwitch.setText("隐藏桌面图标");
+        hideLauncherSwitch.setTextSize(17);
+        hideLauncherSwitch.setTextColor(INK);
+        launcher.addView(hideLauncherSwitch, new LinearLayout.LayoutParams(-1, dp(52)));
+        launcher.addView(text("仅隐藏“小布识屏增强”的桌面图标。隐藏后，可从 LSPosed 的模块设置进入本页，关闭此开关恢复图标。", 14, SECONDARY));
+        hideLauncherSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (updating) return;
+            try { LauncherVisibility.setHidden(this, checked); }
+            catch (RuntimeException error) {
+                Toast.makeText(this, "无法更改桌面图标，请稍后重试", Toast.LENGTH_SHORT).show();
+            }
+            updateState();
+        });
+
         LinearLayout compatibility = card(content, "启用与兼容性");
         compatibility.addView(text("在 LSPosed 中启用模块，勾选推荐作用域：小布识屏、翻译、系统框架。首次安装、更新模块或调整系统框架作用域后，请重启手机。", 14, SECONDARY));
         TextView compatibilityInfo = text("功能需要系统提供小布识屏。不同系统版本可能存在接口差异；不匹配的增强会停用并恢复对应的原生流程，其他可用功能继续工作。", 13, SECONDARY);
@@ -175,6 +192,7 @@ public final class GestureSettingsActivity extends Activity {
         updating = true;
         boolean enabled = GestureConfig.enabled(this);
         enabledSwitch.setChecked(enabled);
+        if (hideLauncherSwitch != null) hideLauncherSwitch.setChecked(LauncherVisibility.hidden(this));
         updating = false;
         String framework = "系统框架：加载状态尚未确认；首次安装或更新后需重启";
         try {

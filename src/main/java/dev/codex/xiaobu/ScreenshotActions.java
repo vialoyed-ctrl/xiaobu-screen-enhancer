@@ -36,6 +36,7 @@ import de.robv.android.xposed.XposedBridge;
 /** Native menu, bounded image writes and package-restricted engine handoff. */
 final class ScreenshotActions {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final int[] MENU_ENGINES = {0, 1, 2, 3, 4, 6};
     private static final String[] PACKAGES = {
             "com.google.android.googlequicksearchbox", "ru.yandex.searchplugin" };
     private static final String[] ENTRY_POINTS = {
@@ -85,9 +86,15 @@ final class ScreenshotActions {
             Object previous = binding.popup.get();
             if (previous != null && Boolean.TRUE.equals(ui.popupShowing.invoke(previous))) return;
             Object popup = ui.popup.newInstance(context);
-            List<Object> items = new ArrayList<Object>(2);
-            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Google" : "应用", engineIcon(context, selectedEngine < 0 ? 0 : selectedEngine), null));
-            items.add(ui.popupItem.newInstance(selectedEngine < 0 ? "Yandex" : "网页", engineIcon(context, selectedEngine < 0 ? 1 : selectedEngine), null));
+            List<Object> items = new ArrayList<Object>();
+            if (selectedEngine < 0) {
+                String[] names = {"Google", "Yandex", "抖音", "百度", "搜狗", "WhatAnime"};
+                for (int i = 0; i < names.length; i++)
+                    items.add(ui.popupItem.newInstance(names[i], engineIcon(context, MENU_ENGINES[i]), null));
+            } else {
+                items.add(ui.popupItem.newInstance("应用", engineIcon(context, selectedEngine), null));
+                items.add(ui.popupItem.newInstance("网页", engineIcon(context, selectedEngine), null));
+            }
             ui.popupItems.invoke(popup, items);
             final Context app = context.getApplicationContext();
             final WeakReference<View> target = new WeakReference<View>(alert);
@@ -97,18 +104,18 @@ final class ScreenshotActions {
                         if ("invoke".equals(method.getName())) {
                             if (args == null || args.length < 2 || !(args[1] instanceof Integer)) return ui.unit;
                             int choice = (Integer) args[1];
-                            if (choice < 0 || choice >= 2 || !selected.compareAndSet(false, true)) return ui.unit;
+                            if (choice < 0 || choice >= (selectedEngine < 0 ? MENU_ENGINES.length : 2) || !selected.compareAndSet(false, true)) return ui.unit;
                             View view = target.get();
                             if (view == null || !binding.isCurrent()) return ui.unit;
-                            if (selectedEngine < 0) {
+                            if (selectedEngine < 0 && choice < 2) {
                                 MAIN.postDelayed(() -> {
                                     try { if (!binding.closed) showMenu(view, anchor, binding, ui, choice); }
                                     catch (Throwable error) { ScreenshotButtons.log("search mode menu failed", error); }
                                 }, 120);
                                 return ui.unit;
                             }
-                            final int engine = selectedEngine;
-                            final boolean web = choice == 1;
+                            final int engine = selectedEngine < 0 ? MENU_ENGINES[choice] : selectedEngine;
+                            final boolean web = engine >= 2 || (selectedEngine >= 0 && choice == 1);
                             if (!web && resolveShare(app, engine, null, null) == null) {
                                 toast(app, "未找到对应的识图应用");
                                 return ui.unit;
@@ -149,11 +156,7 @@ final class ScreenshotActions {
     }
 
     private static Drawable engineIcon(Context context, int engine) {
-        try { return context.getPackageManager().getApplicationIcon(PACKAGES[engine]); }
-        catch (Exception unavailable) {
-            // Missing one engine must not prevent the other entry from being shown.
-            return context.getPackageManager().getDefaultActivityIcon();
-        }
+        return new SearchEngineIcon(context, engine);
     }
 
     private static ScreenshotSession.Action<Bitmap> claim(Context app, ScreenshotButtons.Binding binding) {
@@ -265,6 +268,15 @@ final class ScreenshotActions {
 
     private static Intent resolveShare(Context app, int engine, Uri uri, String excludedClass) {
         try {
+            if (engine == 2) {
+                Intent search = new Intent(Intent.ACTION_VIEW, Uri.parse("snssdk1128://search/visual").buildUpon()
+                        .appendQueryParameter("src_image", uri == null ? "" : uri.toString())
+                        .appendQueryParameter("page_type", "result").build());
+                search.setPackage("com.ss.android.ugc.aweme");
+                search.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                if (uri != null) search.setClipData(ClipData.newRawUri("识屏图片", uri));
+                return search;
+            }
             PackageManager packages = app.getPackageManager();
             String name = PACKAGES[engine];
             Intent explicit = imageIntent(uri).setClassName(name, ENTRY_POINTS[engine]);

@@ -6,7 +6,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -15,7 +14,7 @@ import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Public image hosting, followed by URL-based Google/Yandex search. */
+/** URL-based image search and direct first-party Sogou upload. */
 final class WebImageSearch {
     private static final int MAX_IMAGE = 4 * 1024 * 1024;
     private static final int MAX_RESPONSE = 1024 * 1024;
@@ -23,15 +22,15 @@ final class WebImageSearch {
     static String upload(InputStream picture, int engine) throws Exception { return upload(picture, engine, null); }
 
     static String upload(InputStream picture, int engine, HostUploadPipeline.Progress progress) throws Exception {
-        if (engine != 0 && engine != 1) throw new IllegalArgumentException("Unknown engine");
+        if (!WebSearchRoutes.isWeb(engine)) throw new IllegalArgumentException("Unknown engine");
         byte[] image = read(picture, MAX_IMAGE);
         if (image.length == 0) throw new IOException("Empty screenshot");
         String direct = HostUploadPipeline.upload(image, Arrays.asList(
+                new HostUploadPipeline.Host("搜狗", SogouImageSearch::upload),
                 new HostUploadPipeline.Host("pixhost.top", WebImageSearch::pixhost),
                 new HostUploadPipeline.Host("Pixhost", WebImageSearch::pixhostApi),
                 new HostUploadPipeline.Host("IM.GE", WebImageSearch::imge)), progress);
-        return (engine == 0 ? "https://www.google.com/searchbyimage?image_url="
-                : "https://yandex.com/images/touch/search?rpt=imageview&url=") + URLEncoder.encode(direct, "UTF-8");
+        return WebSearchRoutes.publicImageResult(engine, direct);
     }
 
     private static String imge(byte[] image) throws Exception {
@@ -81,7 +80,7 @@ final class WebImageSearch {
                 + "\"; filename=\"screenshot." + (jpeg ? "jpg" : "png") + "\"\r\nContent-Type: image/"
                 + (jpeg ? "jpeg" : "png") + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         byte[] prefix = header.toByteArray(), suffix = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
-        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        HttpURLConnection connection = DirectNetwork.open(new URL(endpoint));
         try {
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(7000);

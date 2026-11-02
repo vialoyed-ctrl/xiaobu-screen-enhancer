@@ -28,3 +28,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Rule miss cache test failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Disjoint text test compilation failed' }
 & java -cp $testClasses dev.codex.xiaobu.MaskSelectedTextTest
 if ($LASTEXITCODE -ne 0) { throw 'Disjoint text copy test failed' }
+
+& javac -encoding UTF-8 -d $testClasses (Join-Path $production 'WebSearchRoutes.java') (Join-Path $PSScriptRoot 'tests/dev/codex/xiaobu/WebSearchRoutesTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Web image route test compilation failed' }
+& java -cp $testClasses dev.codex.xiaobu.WebSearchRoutesTest
+if ($LASTEXITCODE -ne 0) { throw 'Web image route test failed' }

@@ -23,6 +23,12 @@ public final class LauncherHook implements IXposedHookLoadPackage {
             return;
         }
         if (!TARGET.equals(params.packageName)) return;
+        XposedHelpers.findAndHookMethod(android.app.Application.class, "attach", android.content.Context.class,
+                new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam hook) {
+                        DirectNetwork.install((android.content.Context) hook.args[0]);
+                    }
+                });
         RecognitionTimingHook.install(params.classLoader);
         StartupAnimationHook.install(params.classLoader);
         NetworkOcrHook.install(params.classLoader);
