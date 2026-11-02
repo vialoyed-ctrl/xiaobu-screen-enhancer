@@ -33,3 +33,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Disjoint text copy test failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Web image route test compilation failed' }
 & java -cp $testClasses dev.codex.xiaobu.WebSearchRoutesTest
 if ($LASTEXITCODE -ne 0) { throw 'Web image route test failed' }
+
+& javac -encoding UTF-8 -d $testClasses (Join-Path $production 'SearchImageCache.java') (Join-Path $PSScriptRoot 'tests/dev/codex/xiaobu/SearchImageCacheTest.java')
+if ($LASTEXITCODE -ne 0) { throw 'Search image cache test compilation failed' }
+& java -cp $testClasses dev.codex.xiaobu.SearchImageCacheTest
+if ($LASTEXITCODE -ne 0) { throw 'Search image cache test failed' }

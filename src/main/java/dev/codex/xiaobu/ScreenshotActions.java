@@ -192,29 +192,35 @@ final class ScreenshotActions {
         try {
             Bitmap picture = action.value();
             if (picture.isRecycled()) throw new IllegalStateException("Screenshot no longer available");
+            boolean saveToGallery = callback == null;
             ContentValues values = new ContentValues();
-            String date = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
-            values.put(MediaStore.Images.Media.DISPLAY_NAME, "小布识屏_" + date + ".png");
-            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
-            if (Build.VERSION.SDK_INT >= 29) {
-                values.put("relative_path", "Pictures/小布识屏增强");
-                values.put("is_pending", 1);
+            if (saveToGallery) {
+                String date = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, "小布识屏_" + date + ".png");
+                values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                if (Build.VERSION.SDK_INT >= 29) {
+                    values.put("relative_path", "Pictures/小布识屏增强");
+                    values.put("is_pending", 1);
+                }
+                uri = app.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IllegalStateException("MediaStore insert returned null");
+            } else {
+                uri = app.getContentResolver().insert(SearchImageProvider.CONTENT, values);
+                if (uri == null) throw new IllegalStateException("Search cache insert returned null");
             }
-            uri = app.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-            if (uri == null) throw new IllegalStateException("MediaStore insert returned null");
             try (OutputStream stream = app.getContentResolver().openOutputStream(uri)) {
                 if (stream == null || !picture.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
                     throw new IllegalStateException("PNG write failed");
                 }
             }
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (saveToGallery && Build.VERSION.SDK_INT >= 29) {
                 ContentValues ready = new ContentValues();
                 ready.put("is_pending", 0);
                 if (app.getContentResolver().update(uri, ready, null, null) != 1) {
                     throw new IllegalStateException("MediaStore image was not published");
                 }
             }
-            XposedBridge.log("XiaobuLauncherHook: screenshot saved to " + uri);
+            XposedBridge.log("XiaobuLauncherHook: " + (saveToGallery ? "screenshot saved to " : "search image cached at ") + uri);
             success = true;
         } catch (Throwable error) {
             if (uri != null) {

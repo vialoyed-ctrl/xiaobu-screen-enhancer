@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <permission android:name="dev.codex.xiaobu.launcherhook.READ_SEARCH_IMAGE"
+        android:protectionLevel="signature" />
     <application android:label="小布识屏增强" android:hasCode="true"
         android:theme="@style/ModuleSettingsTheme" android:allowBackup="false">
         <meta-data android:name="xposedmodule" android:value="true" />
@@ -44,5 +46,9 @@
         <provider android:name="dev.codex.xiaobu.settings.GestureSettingsProvider"
             android:authorities="dev.codex.xiaobu.launcherhook.settings"
             android:exported="true" android:grantUriPermissions="false" />
+        <provider android:name="dev.codex.xiaobu.SearchImageProvider"
+            android:authorities="dev.codex.xiaobu.launcherhook.search"
+            android:readPermission="dev.codex.xiaobu.launcherhook.READ_SEARCH_IMAGE"
+            android:exported="true" android:grantUriPermissions="true" />
     </application>
 </manifest>
