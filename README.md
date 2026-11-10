@@ -4,7 +4,7 @@
 
 [下载最新版](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases/latest)
 
-## 能做什么
+## 功能
 
 - 在桌面和更多应用里唤起小布识屏、屏幕翻译。
 - 点小白条识屏，也可以开启全屏单指长按。
@@ -14,19 +14,13 @@
 - 加快识屏和扫描动画，识别完成就结束动画。
 - 隐藏模块的桌面图标。
 
-## 怎么用
+## 使用
 
 1. 从 Releases 下载 APK，安装后在 LSPosed 中启用模块。
 2. 勾选模块推荐的作用域，重启手机。
 3. 打开模块设置，按需开启底部触碰识屏、单指长按等功能。单指长按还需要开启模块的无障碍服务。
 
 更新时直接覆盖安装，原设置会保留，装完重启一下。隐藏桌面图标需要给模块 Root 权限。
-
-用 ADB 安装请加 `--no-incremental`，避免重启后小白条识屏失效：
-
-```sh
-adb install --no-incremental -r XiaobuScreenEnhancer-v2.2.7.apk
-```
 
 ## 最近更新
 
@@ -36,8 +30,6 @@ adb install --no-incremental -r XiaobuScreenEnhancer-v2.2.7.apk
 - **2.1.8**：修复底部触碰识屏影响视频亮度的问题。
 - **2.1.7**：改善头像和小图提取。部分图片只能截取屏幕上显示的内容，GIF 不一定能拿到动态原图。
 - **2.1.6**：修复上滑误触发识屏的问题。
-
-更早的改动见 [Releases](https://github.com/vialoyed-ctrl/xiaobu-screen-enhancer/releases)，耗时测试见 [PERFORMANCE.md](PERFORMANCE.md)。
 
 ## 适配情况
 
